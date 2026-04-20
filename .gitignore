@@ -1,0 +1,13 @@
+.DS_Store
+.Rhistory
+*.xcuserstate
+**/xcuserdata/
+
+# Local / IDE
+.claude/settings.local.json
+
+# gstack local logs
+**/.gstack/
+
+# Nested repo backup (see README if you restore history)
+Allot/.git.nested.backup/
