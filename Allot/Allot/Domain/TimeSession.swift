@@ -2,22 +2,27 @@
 //  TimeSession.swift
 //  Allot
 //
-//  一段可归属到 WorkTask 的时间记录（正计时结束或补录）。
+//  A recorded time segment. workTask is nil for unbound (free) timer sessions.
 
 import Foundation
 import SwiftData
 
-@Model
-final class TimeSession {
+@Model final class TimeSession {
     var id: UUID
+    /// UTC start timestamp.
     var startAt: Date
+    /// UTC end timestamp. nil while actively running.
     var endAt: Date?
-    /// 暂停累计秒数（规格 §12.3；正计时采用暂停累计模型时使用）
+    /// Accumulated pause duration in seconds (not counted in effective duration).
     var totalPausedSeconds: Int
     var source: SessionSource
+    /// Non-nil only when source == .quickLog.
+    var quickLogSubtype: QuickLogSubtype?
 
-    @Relationship(inverse: \WorkTask.sessions)
-    var workTask: WorkTask
+    /// nil for unbound timer sessions.
+    var workTask: WorkTask?
+
+    // Effective duration = (endAt - startAt) - totalPausedSeconds
 
     init(
         id: UUID = UUID(),
@@ -25,13 +30,15 @@ final class TimeSession {
         endAt: Date? = nil,
         totalPausedSeconds: Int = 0,
         source: SessionSource = .liveTimer,
-        workTask: WorkTask
+        quickLogSubtype: QuickLogSubtype? = nil,
+        workTask: WorkTask? = nil
     ) {
         self.id = id
         self.startAt = startAt
         self.endAt = endAt
         self.totalPausedSeconds = totalPausedSeconds
         self.source = source
+        self.quickLogSubtype = quickLogSubtype
         self.workTask = workTask
     }
 }

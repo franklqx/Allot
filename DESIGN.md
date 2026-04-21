@@ -42,7 +42,7 @@
 | `bg/primary` | `#FBF7F1` | `#161412` | 主背景（米白纸 / 深咖啡夜） |
 | `bg/secondary` | `#F4EFE6` | `#1F1C18` | 卡片/分组背景 |
 | `bg/elevated` | `#FFFFFF` | `#26221D` | 浮起 sheet、modal |
-| `bg/glass` | `rgba(251,247,241,0.72)` + blur(24) | `rgba(22,20,18,0.72)` + blur(24) | Liquid Glass Tab Bar |
+| `bg/glass` | `rgba(251,247,241,0.72)` + blur(24) | `rgba(22,20,18,0.72)` + blur(24) | 自定义毛玻璃场景（Tab Bar 用系统原生，不用此 token） |
 | `text/primary` | `#1C1814` | `#F2EDE4` | 主文字、标题 |
 | `text/secondary` | `#6B6359` | `#A89E91` | 次级文字、说明 |
 | `text/tertiary` | `#A39A8C` | `#6B6359` | 占位、disabled、辅助标签 |
@@ -300,22 +300,32 @@ M  T  W  T  F  S  S
 - 主色覆盖为 `accent/primary`
 - 周末文字色 `text/secondary`（不染红）
 
-### 5.8 Tab Bar（Liquid Glass）
+### 5.8 底部导航 + 顶部入口
+
+```
+顶部右上角：⚙ Settings（gearshape）
+
+底部：
+┌─────────────────────────────────────┐
+│  [ ⬢ Home  ◐ Allotted ]      [ ⊕ ]  │
+│   ↑ 左侧胶囊（Liquid Glass）  ↑ Timer FAB
+└─────────────────────────────────────┘
+```
 
 | 元素 | 规格 |
 |---|---|
-| 背景 | `bg/glass`（毛玻璃 + 72% 不透明） |
-| 高度 | 49pt + safe area |
-| 图标 | SF Symbols，22pt |
-| 当前页 | `accent/primary`，图标 filled 变体 |
-| 非当前 | `text/tertiary`，图标 regular 变体 |
-| 标题 | 不显示文字（只有图标） |
+| 左侧胶囊背景 | **系统原生 Liquid Glass**（iOS 26 `TabView` 默认样式，不自定义背景） |
+| 胶囊高度 | 系统管理，跟随 safe area |
+| Tab 图标 | SF Symbols 22pt，filled = 选中，regular = 未选中 |
+| 选中色 | `accent/primary`（通过 `.tint(accent/primary)` 覆盖系统默认蓝） |
+| 未选中色 | 系统默认（跟随 Liquid Glass 自动适配 Light/Dark） |
+| Tab 文字 | 不显示（只有图标） |
+| 右侧 Timer FAB | 独立按钮，挂在 `TabView` 外层 overlay，`accent/primary` 背景，`plus` 图标（看今天）/ `"Today"` 文字（看其他日期） |
+| Settings | 右上角 `gearshape` 图标，不在底部 |
 
-四个 Tab：
-1. Home — `house`
-2. Timer — `timer`
-3. Allotted — `chart.pie`
-4. Settings — `gearshape`
+Tab 只有两个：
+1. Home — `house` / `house.fill`
+2. Allotted — `chart.pie` / `chart.pie.fill`
 
 ### 5.9 Buttons
 
@@ -349,9 +359,9 @@ M  T  W  T  F  S  S
 | 用途 | Symbol |
 |---|---|
 | Tab: Home | `house` / `house.fill` |
-| Tab: Timer | `timer` |
 | Tab: Allotted | `chart.pie` / `chart.pie.fill` |
-| Tab: Settings | `gearshape` / `gearshape.fill` |
+| Timer FAB | `plus` |
+| Settings（右上角） | `gearshape` |
 | 计时模式 | `stopwatch` |
 | 倒计时模式 | `hourglass` |
 | 完成 | `checkmark` |

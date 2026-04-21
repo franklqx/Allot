@@ -2,61 +2,74 @@
 //  WorkTask.swift
 //  Allot
 //
-//  产品规格中的 Task；Swift 并发已有 Task，故模型命名为 WorkTask。
+//  Swift reserves "Task" for concurrency, so the model is named WorkTask.
 
 import Foundation
 import SwiftData
 
-@Model
-final class WorkTask {
+@Model final class WorkTask {
     var id: UUID
     var title: String
     var createdAt: Date
 
-    // ── 时间目标 ──────────────────────────────────────
-    /// 每次做这件事的目标时长（秒）。nil = 没有目标，只记录时间。
-    var targetDuration: Int?
+    // ── Type & timer ─────────────────────────────────
+    var type: TaskType              // .once / .recurring
+    var timerMode: TimerMode        // .stopwatch / .countdown
+    /// Countdown target in seconds. Only used when timerMode == .countdown. Default 1500 (25 min).
+    var countdownDuration: Int
 
-    // ── 排期 ─────────────────────────────────────────
-    /// true = 重复任务；false = 一次性任务。
-    var isRecurring: Bool
-
-    /// 重复的星期。空数组 = 每天；[1,2,3,4,5] = 工作日；[6,7] = 周末。
-    /// 1=周一 ... 7=周日。仅 isRecurring = true 时有意义。
-    var recurringDays: [Int]
-
-    /// 一次性任务的具体日期。isRecurring = false 时使用。
+    // ── Schedule ─────────────────────────────────────
+    /// Calendar date for once tasks. nil for recurring.
     var scheduledDate: Date?
+    /// Scheduled start time as minutes from midnight (0–1439). nil = no fixed time.
+    var startTime: Int?
 
-    /// 任务开始的具体时间（只使用小时/分钟部分）。nil = 无固定时间。
-    var scheduledTime: Date?
+    // ── Recurrence ───────────────────────────────────
+    /// Required when type == .recurring.
+    var repeatRule: RepeatRule?
+    /// Day indices for .weekly (1=Mon…7=Sun), .monthly (1–31), or .custom.
+    var repeatCustomDays: [Int]
 
-    // ── 关联 ─────────────────────────────────────────
-    var tags: [Tag]
+    // ── Completion ───────────────────────────────────
+    /// Per-day completion dates. Once tasks have at most one entry.
+    var completedDates: [Date]
+    /// Duration (seconds) recorded via quickLog at completion time.
+    var completedDuration: Int
+
+    // ── Relationships ────────────────────────────────
+    var tag: Tag?
 
     @Relationship(deleteRule: .cascade, inverse: \TimeSession.workTask)
-    var sessions: [TimeSession]
+    var sessions: [TimeSession] = []
 
     init(
         id: UUID = UUID(),
         title: String,
         createdAt: Date = Date(),
-        targetDuration: Int? = nil,
-        isRecurring: Bool = false,
-        recurringDays: [Int] = [],
+        type: TaskType = .once,
+        timerMode: TimerMode = .stopwatch,
+        countdownDuration: Int = 1500,
         scheduledDate: Date? = nil,
-        scheduledTime: Date? = nil,
-        tags: [Tag] = []
+        startTime: Int? = nil,
+        repeatRule: RepeatRule? = nil,
+        repeatCustomDays: [Int] = [],
+        completedDates: [Date] = [],
+        completedDuration: Int = 0,
+        tag: Tag? = nil
     ) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
-        self.targetDuration = targetDuration
-        self.isRecurring = isRecurring
-        self.recurringDays = recurringDays
+        self.type = type
+        self.timerMode = timerMode
+        self.countdownDuration = countdownDuration
         self.scheduledDate = scheduledDate
-        self.scheduledTime = scheduledTime
-        self.tags = tags
+        self.startTime = startTime
+        self.repeatRule = repeatRule
+        self.repeatCustomDays = repeatCustomDays
+        self.completedDates = completedDates
+        self.completedDuration = completedDuration
+        self.tag = tag
         self.sessions = []
     }
 }
