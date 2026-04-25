@@ -2,8 +2,8 @@
 //  TimerFABButton.swift
 //  Allot
 //
-//  The floating action button that opens the Timer panel.
-//  Plus icon when viewing today; "Today" label when viewing another date.
+//  iOS 26 Liquid Glass circle button that sits on the same baseline as
+//  the TabView pill — the right-hand sibling of the tab bar.
 
 import SwiftUI
 
@@ -15,42 +15,33 @@ struct TimerFABButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                Circle()
-                    .fill(Color.accentPrimary)
-                    .frame(width: 56, height: 56)
-                    .shadow(color: Color.accentPrimary.opacity(0.35), radius: 12, x: 0, y: 4)
-
-                if isRunning {
-                    // Pulse ring while timer is active
-                    Circle()
-                        .stroke(Color.accentPrimary.opacity(0.4), lineWidth: 2)
-                        .frame(width: 64, height: 64)
-                        .scaleEffect(1.0)
-                        .animation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true), value: isRunning)
+                Group {
+                    if isViewingToday {
+                        Image(systemName: isRunning ? "timer" : "plus")
+                            .font(.system(size: 20, weight: .semibold))
+                    } else {
+                        Text("Today")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
                 }
-
-                if isViewingToday {
-                    Image(systemName: isRunning ? "timer" : "plus")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
-                } else {
-                    Text("Today")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
+                .foregroundStyle(Color.textPrimary)
             }
+            .frame(width: 50, height: 50)
+            .glassEffect(.regular.interactive(), in: .circle)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isRunning ? "Timer running — tap to open" : "Start timer")
+        .accessibilityLabel(isRunning ? "Timer running — tap to open" : "Add task")
     }
 }
 
 #Preview {
-    VStack(spacing: 20) {
-        TimerFABButton(isRunning: false, action: {})
-        TimerFABButton(isRunning: true, action: {})
-        TimerFABButton(isRunning: false, isViewingToday: false, action: {})
+    ZStack(alignment: .bottomTrailing) {
+        Color.bgSecondary.ignoresSafeArea()
+        VStack(spacing: 20) {
+            TimerFABButton(isRunning: false, action: {})
+            TimerFABButton(isRunning: true, action: {})
+            TimerFABButton(isRunning: false, isViewingToday: false, action: {})
+        }
+        .padding()
     }
-    .padding()
-    .background(Color.bgPrimary)
 }

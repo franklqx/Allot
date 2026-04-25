@@ -11,16 +11,15 @@ struct OncePanelView: View {
     let task: WorkTask
     let date: Date
     let onEdit: () -> Void
+    var onStart: () -> Void = {}
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    @State private var showQuickLog = false
     @State private var showRemoveConfirm = false
 
     private var isCompleted: Bool { task.isCompleted(on: date) }
     private var workedSeconds: Int { task.workedSeconds(on: date) }
-    private var hasSessions: Bool { task.sessions.contains { Calendar.current.isDate($0.startAt, inSameDayAs: date) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -81,20 +80,15 @@ struct OncePanelView: View {
                 // Actions
                 VStack(spacing: 8) {
                     Button {
-                        handleComplete()
+                        dismiss()
+                        onStart()
                     } label: {
-                        Label(
-                            isCompleted ? "Mark Incomplete" : "Complete",
-                            systemImage: isCompleted ? "arrow.uturn.backward" : "checkmark"
-                        )
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(isCompleted ? Color.textPrimary : .white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            isCompleted ? Color.bgSecondary : Color.accentPrimary,
-                            in: Capsule()
-                        )
+                        Label("Start", systemImage: "play.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.bgPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.textPrimary, in: Capsule())
                     }
                     .buttonStyle(.plain)
 
@@ -131,14 +125,6 @@ struct OncePanelView: View {
             .padding(.bottom, 32)
         }
         .background(Color.bgElevated)
-        .sheet(isPresented: $showQuickLog) {
-            QuickLogSheet(task: task, date: date) { duration in
-                saveQuickLog(duration: duration)
-                task.markCompleted(on: date)
-                try? modelContext.save()
-                dismiss()
-            }
-        }
         .confirmationDialog("Remove \"\(task.title)\"?", isPresented: $showRemoveConfirm, titleVisibility: .visible) {
             Button("Remove", role: .destructive) {
                 modelContext.delete(task)
@@ -149,31 +135,4 @@ struct OncePanelView: View {
         }
     }
 
-    private func handleComplete() {
-        if isCompleted {
-            task.markIncomplete(on: date)
-            try? modelContext.save()
-        } else if hasSessions {
-            task.markCompleted(on: date)
-            try? modelContext.save()
-            dismiss()
-        } else {
-            showQuickLog = true
-        }
-    }
-
-    private func saveQuickLog(duration: Int) {
-        let cal = Calendar.current
-        let endAt = cal.startOfDay(for: date).addingTimeInterval(TimeInterval(duration))
-        let startAt = endAt.addingTimeInterval(-TimeInterval(duration))
-        let session = TimeSession(
-            startAt: startAt,
-            endAt: endAt,
-            source: .quickLog,
-            quickLogSubtype: .completion,
-            workTask: task
-        )
-        modelContext.insert(session)
-        task.completedDuration = duration
-    }
 }

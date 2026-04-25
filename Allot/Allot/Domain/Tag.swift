@@ -8,7 +8,7 @@ import SwiftData
 @Model final class Tag {
     var id: UUID
     var name: String
-    /// Token name matching the design system (e.g. "coral", "teal", "stone").
+    /// Token name matching the design system v0.2 (e.g. "sky", "lime", "gray").
     var colorToken: String
     /// True only for the system-created Untagged tag — cannot be renamed or deleted.
     var isSystem: Bool
@@ -20,7 +20,7 @@ import SwiftData
     init(
         id: UUID = UUID(),
         name: String,
-        colorToken: String = "stone",
+        colorToken: String = "gray",
         isSystem: Bool = false,
         createdAt: Date = Date()
     ) {

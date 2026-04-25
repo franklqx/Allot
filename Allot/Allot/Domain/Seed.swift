@@ -13,7 +13,7 @@ enum Seed {
         let existing = (try? context.fetch(descriptor)) ?? []
         guard existing.isEmpty else { return }
 
-        context.insert(Tag(name: "Untagged", colorToken: "stone", isSystem: true))
+        context.insert(Tag(name: "Untagged", colorToken: "gray", isSystem: true))
         try? context.save()
     }
 }

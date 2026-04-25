@@ -2,105 +2,58 @@
 //  ContentView.swift
 //  Allot
 //
-//  Root shell: Liquid Glass TabView + Timer FAB + top-sliding Timer panel.
+//  Root shell. Native iOS 26 Liquid Glass TabView:
+//    • 3 regular Tabs on the left (pill)
+//    • 1 Tab(role: .search) repurposed as the + action (detached right pill)
+//  Selecting the + "tab" opens New Task and snaps the selection back.
 
 import SwiftUI
 import SwiftData
 
-private enum Tab: Hashable { case home, allotted }
+private enum AppTab: Hashable { case home, focus, allotted, add }
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(TimerService.self) private var timerService
 
-    @State private var selectedTab: Tab = .home
-    @State private var showTimerPanel = false
+    @State private var selectedTab: AppTab = .home
+    @State private var lastRealTab: AppTab = .home
     @State private var showNewTask = false
     @State private var recoverySentinel: ActiveSessionSentinel?
     @State private var homeSelectedDate: Date = Date()
 
     var body: some View {
-        ZStack(alignment: .top) {
-
-            // ── Main content ────────────────────────────────────
-            ZStack(alignment: .bottomTrailing) {
-                TabView(selection: $selectedTab) {
-                    HomeView(
-                        selectedDate: $homeSelectedDate,
-                        onShowTimer: { withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showTimerPanel = true } }
-                    )
-                    .tabItem { Label("Home", systemImage: selectedTab == .home ? "house.fill" : "house") }
-                    .tag(Tab.home)
-
-                    AllottedView()
-                        .tabItem { Label("Allotted", systemImage: selectedTab == .allotted ? "chart.pie.fill" : "chart.pie") }
-                        .tag(Tab.allotted)
-                }
-                .tint(Color.accentPrimary)
-
-                TimerFABButton(
-                    isRunning: timerService.isRunning,
-                    isViewingToday: Calendar.current.isDateInToday(homeSelectedDate),
-                    action: {
-                        if !Calendar.current.isDateInToday(homeSelectedDate) {
-                            homeSelectedDate = Date()
-                        } else {
-                            showNewTask = true
-                        }
-                    }
+        TabView(selection: $selectedTab) {
+            SwiftUI.Tab("Home", systemImage: "house", value: AppTab.home) {
+                HomeView(
+                    selectedDate: $homeSelectedDate,
+                    onStart: { task in startTaskAndJumpToFocus(task) }
                 )
-                .padding(.trailing, 20)
-                .padding(.bottom, 20)
-                .ignoresSafeArea(edges: .bottom)
             }
-            .zIndex(0)
-
-            // ── Timer panel backdrop ────────────────────────────
-            if showTimerPanel {
-                Color.black.opacity(0.35)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            showTimerPanel = false
-                        }
-                    }
-                    .zIndex(1)
+            SwiftUI.Tab("Focus", systemImage: "timer", value: AppTab.focus) {
+                FocusTabView()
             }
-
-            // ── Timer panel (slides from top) ───────────────────
-            if showTimerPanel {
-                TimerPanelView(
-                    selectedDate: homeSelectedDate,
-                    onDismiss: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                            showTimerPanel = false
-                        }
-                    }
-                )
-                .frame(maxWidth: .infinity)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(2)
+            SwiftUI.Tab("Allotted", systemImage: "chart.bar.xaxis", value: AppTab.allotted) {
+                AllottedView()
             }
-
-            // ── Top-edge drag trigger ───────────────────────────
-            if !showTimerPanel {
-                Color.clear
-                    .frame(height: 50)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 20, coordinateSpace: .local)
-                            .onEnded { value in
-                                if value.translation.height > 30 {
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                        showTimerPanel = true
-                                    }
-                                }
-                            }
-                    )
-                    .zIndex(3)
+            // Repurposed search slot — detached right pill.
+            // Only the default (+) state uses the filled-disc variant for that
+            // strong CTA look; the calendar/timer hint states stay as plain
+            // symbols so they aren't squeezed by the dark disc treatment.
+            SwiftUI.Tab("Add", systemImage: fabIcon, value: AppTab.add, role: .search) {
+                Color.clear    // never shown; we intercept selection
             }
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showTimerPanel)
+        .tint(Color.textPrimary)
+        .onChange(of: selectedTab) { _, new in
+            guard new == .add else {
+                lastRealTab = new
+                return
+            }
+            handleAddTap()
+            // Snap selection back to the previous real tab on next runloop.
+            DispatchQueue.main.async { selectedTab = lastRealTab }
+        }
         .fullScreenCover(isPresented: $showNewTask) {
             NewTaskView(prefilledDate: homeSelectedDate)
         }
@@ -122,6 +75,39 @@ struct ContentView: View {
                 Text("Your timer for \"\(s.taskTitle)\" was still running. Save with end time set to now?")
             }
         }
+    }
+
+    // MARK: Derived
+
+    /// Default `+` uses the filled-disc variant (dark ring CTA).
+    /// Non-today swaps to a plain calendar hint (tap jumps back to today).
+    /// Timer-running does NOT override — add is always available.
+    private var fabIcon: String {
+        if !Calendar.current.isDateInToday(homeSelectedDate) { return "calendar" }
+        return "plus.circle.fill"
+    }
+
+    // MARK: Actions
+
+    private func handleAddTap() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if !Calendar.current.isDateInToday(homeSelectedDate) {
+            homeSelectedDate = Date()
+            lastRealTab = .home
+            return
+        }
+        showNewTask = true
+    }
+
+    private func startTaskAndJumpToFocus(_ task: WorkTask) {
+        guard !timerService.isRunning else {
+            selectedTab = .focus
+            return
+        }
+        task.timerMode = .stopwatch
+        timerService.start(task: task, in: modelContext)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation { selectedTab = .focus }
     }
 
     private func checkKillRecovery() {

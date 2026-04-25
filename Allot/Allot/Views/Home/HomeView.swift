@@ -7,17 +7,18 @@ import SwiftData
 
 struct HomeView: View {
     @Binding var selectedDate: Date
-    var onShowTimer: () -> Void = {}
+    /// Called with a WorkTask when user wants to start a timer — parent switches to Focus tab.
+    var onStart: (WorkTask) -> Void = { _ in }
 
     @Environment(\.modelContext) private var modelContext
-    @Environment(TimerService.self)  private var timerService
+    @Environment(TimerService.self) private var timerService
 
     @Query private var allTasks: [WorkTask]
 
     @State private var hideCompleted = false
-    @State private var selectedOnceTask: WorkTask?
-    @State private var selectedRecurringTask: WorkTask?
-    @State private var taskToEdit: WorkTask?
+    @State private var taskToComplete: WorkTask?
+    @State private var onceTaskDetail: WorkTask?
+    @State private var recurringTaskDetail: WorkTask?
 
     // MARK: Computed
 
@@ -45,7 +46,6 @@ struct HomeView: View {
             VStack(spacing: 0) {
                 headerBar
                 DateStripView(selectedDate: $selectedDate)
-                pullDownHint
                 Divider()
                     .foregroundStyle(Color.textPrimary.opacity(0.06))
                 taskList
@@ -62,39 +62,32 @@ struct HomeView: View {
                 }
             }
         }
-        .sheet(item: $selectedOnceTask) { task in
-            OncePanelView(task: task, date: selectedDate, onEdit: { taskToEdit = task })
-                .presentationDetents([.height(panelHeight(for: task))])
+        .sheet(item: $taskToComplete) { task in
+            CompleteSheet(task: task, date: selectedDate)
+                .presentationDetents([.height(task.workedSeconds(on: selectedDate) > 0 ? 360 : 420)])
                 .presentationDragIndicator(.hidden)
                 .presentationBackground(Color.bgElevated)
         }
-        .sheet(item: $selectedRecurringTask) { task in
-            RecurringPanelView(task: task, date: selectedDate, onEdit: { taskToEdit = task })
-                .presentationBackground(Color.bgElevated)
+        .sheet(item: $onceTaskDetail) { task in
+            OncePanelView(
+                task: task,
+                date: selectedDate,
+                onEdit: { },
+                onStart: { onStart(task) }
+            )
+            .presentationDetents([.height(panelHeight(for: task))])
+            .presentationDragIndicator(.hidden)
+            .presentationBackground(Color.bgElevated)
         }
-    }
-
-    // MARK: Pull-down hint
-
-    private var pullDownHint: some View {
-        Button(action: onShowTimer) {
-            HStack(spacing: 5) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(timerService.isRunning ? "Timer running" : "Pull for timer")
-                    .font(.system(size: 11))
-            }
-            .foregroundStyle(timerService.isRunning ? Color.accentPrimary : Color.textTertiary)
-            .padding(.vertical, 6)
+        .sheet(item: $recurringTaskDetail) { task in
+            RecurringPanelView(
+                task: task,
+                date: selectedDate,
+                onEdit: { },
+                onStart: { onStart(task) }
+            )
+            .presentationBackground(Color.bgElevated)
         }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
-        .gesture(
-            DragGesture(minimumDistance: 20)
-                .onEnded { value in
-                    if value.translation.height > 20 { onShowTimer() }
-                }
-        )
     }
 
     // MARK: Header
@@ -130,18 +123,18 @@ struct HomeView: View {
                             date: selectedDate,
                             isRunning: timerService.activeSession?.workTask?.id == task.id,
                             elapsedSeconds: timerService.elapsedSeconds,
-                            onShortPress: { selectTask(task) },
-                            onLongPress: { startTimer(for: task) }
+                            onIconTap: { handleIconTap(task) },
+                            onRowTap:  { openDetail(task) }
                         )
                         Divider()
-                            .padding(.leading, 54)
+                            .padding(.leading, 60)
                             .foregroundStyle(Color.textPrimary.opacity(0.06))
                     }
                 }
 
                 hideShowToggle
                     .padding(.top, 12)
-                    .padding(.bottom, 140)  // clear tab bar + FAB
+                    .padding(.bottom, 140)
             }
         }
     }
@@ -187,23 +180,28 @@ struct HomeView: View {
 
     // MARK: Actions
 
-    private func selectTask(_ task: WorkTask) {
+    private func panelHeight(for task: WorkTask) -> CGFloat {
+        var height: CGFloat = 220                                   // title + meta + Start + Edit/Remove row
+        if task.tag != nil && !(task.tag?.isSystem ?? true) { height += 40 }
+        if task.workedSeconds(on: selectedDate) > 0 { height += 70 }
+        return min(height + 40, 480)
+    }
+
+    private func openDetail(_ task: WorkTask) {
         switch task.type {
-        case .once:      selectedOnceTask      = task
-        case .recurring: selectedRecurringTask = task
+        case .once:      onceTaskDetail      = task
+        case .recurring: recurringTaskDetail = task
         }
     }
 
-    private func startTimer(for task: WorkTask) {
-        guard !timerService.isRunning else { return }
-        timerService.start(task: task, in: modelContext)
-    }
-
-    private func panelHeight(for task: WorkTask) -> CGFloat {
-        var height: CGFloat = 180  // base: title + date + actions
-        if task.tag != nil && !(task.tag?.isSystem ?? true) { height += 44 }
-        if task.workedSeconds(on: selectedDate) > 0 { height += 64 }
-        return min(height + 40, 460)
+    private func handleIconTap(_ task: WorkTask) {
+        if task.isCompleted(on: selectedDate) {
+            task.markIncomplete(on: selectedDate)
+            try? modelContext.save()
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            return
+        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        taskToComplete = task
     }
 }
-

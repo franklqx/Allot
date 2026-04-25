@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Allotted Prism — design lab</title>
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --surface: #ffffff;
+      --text: #1d1d1f;
+      --muted: rgba(0,0,0,0.56);
+      --hairline: rgba(0,0,0,0.08);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 48px 32px 96px;
+      min-height: 100vh;
+    }
+    .lab {
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 4px;
+    }
+    .subtitle {
+      color: var(--muted);
+      margin: 0 0 40px;
+      font-size: 15px;
+    }
+    .variant {
+      background: var(--surface);
+      border-radius: 18px;
+      padding: 36px 40px 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .variant-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 28px;
+    }
+    .variant h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+    .variant .hint {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .prism-stage {
+      width: 100%;
+      display: block;
+    }
+    .legend {
+      display: flex;
+      gap: 24px;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+    .controls button {
+      font: inherit;
+      font-size: 13px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--hairline);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .controls button:hover {
+      background: #f0f0f3;
+    }
+    .controls button.active {
+      background: var(--text);
+      color: #fff;
+      border-color: var(--text);
+    }
+    .controls span.label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-right: 4px;
+    }
+    .segment-group {
+      cursor: pointer;
+      transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+                  opacity 0.5s ease;
+    }
+    .segment-group .face {
+      stroke-linejoin: round;
+      transition: fill 0.45s ease,
+                  stroke 0.45s ease,
+                  stroke-width 0.35s ease,
+                  opacity 0.45s ease;
+    }
+  </style>
+</head>
+<body>
+  <div class="lab">
+    <h1>Allotted Prism</h1>
+    <p class="subtitle">Design lab · v0 — recreating the Robinhood Strategies reference. Click a segment in Variant B to preview selected + hollow state.</p>
+
+    <!-- VARIANT A: faithful recreation -->
+    <section class="variant">
+      <div class="variant-header">
+        <h2>A · Faithful recreation (shallow isometric, 2-tone faces)</h2>
+        <span class="hint">depth 30×20, height 130, strokes 1.5px white</span>
+      </div>
+      <svg class="prism-stage" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid meet" id="prismA"></svg>
+      <div class="legend" id="legendA"></div>
+    </section>
+
+    <!-- VARIANT B: interactive states -->
+    <section class="variant">
+      <div class="variant-header">
+        <h2>B · Interactive — select segment (others go hollow)</h2>
+        <span class="hint">click a segment</span>
+      </div>
+      <svg class="prism-stage" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMid meet" id="prismB"></svg>
+      <div class="controls">
+        <span class="label">jump to:</span>
+        <button data-select="-1" class="active">none</button>
+        <button data-select="0">Reading</button>
+        <button data-select="1">Coding</button>
+        <button data-select="2">Walk</button>
+        <button data-select="3">Journal</button>
+      </div>
+    </section>
+
+    <!-- VARIANT C: angle variations -->
+    <section class="variant">
+      <div class="variant-header">
+        <h2>C · Angle variations (tune depth)</h2>
+        <span class="hint">compare 10°/15°/20° depth offsets</span>
+      </div>
+      <svg class="prism-stage" viewBox="0 0 1200 180" preserveAspectRatio="xMidYMid meet" id="prismC1"></svg>
+      <div style="height:16px"></div>
+      <svg class="prism-stage" viewBox="0 0 1200 180" preserveAspectRatio="xMidYMid meet" id="prismC2"></svg>
+      <div style="height:16px"></div>
+      <svg class="prism-stage" viewBox="0 0 1200 180" preserveAspectRatio="xMidYMid meet" id="prismC3"></svg>
+    </section>
+
+    <!-- VARIANT D: single-segment (edge case) -->
+    <section class="variant">
+      <div class="variant-header">
+        <h2>D · Edge cases</h2>
+        <span class="hint">single segment / many tiny segments / 100%-one-tag</span>
+      </div>
+      <svg class="prism-stage" viewBox="0 0 1200 180" preserveAspectRatio="xMidYMid meet" id="prismD1"></svg>
+      <div style="height:16px"></div>
+      <svg class="prism-stage" viewBox="0 0 1200 180" preserveAspectRatio="xMidYMid meet" id="prismD2"></svg>
+    </section>
+  </div>
+
+  <script>
+    // Sample data mimicking the reference image proportions
+    const SAMPLE = [
+      { id: 'reading', label: 'Reading',  hours: 52, front: '#8ABFF4', top: '#B5D6F8' },
+      { id: 'coding',  label: 'Coding',   hours: 28, front: '#FFB84D', top: '#FFD089' },
+      { id: 'walk',    label: 'Walk',     hours: 10, front: '#F29FBD', top: '#F8C3D5' },
+      { id: 'journal', label: 'Journal',  hours: 10, front: '#A28BE6', top: '#C3B1EE' },
+    ];
+
+    // Build the prism DOM once, return { update(selectedIdx) } that re-positions
+    // and re-styles segments in place so CSS transitions animate the change.
+    function createPrism(svg, data, opts) {
+      const o = Object.assign({
+        x0: 40,
+        y0: 200,
+        height: 130,
+        totalWidth: 1080,
+        dx: 30,
+        dy: 20,
+        strokeColor: '#ffffff',
+        strokeWidth: 1.5,
+        interactive: false,
+        onSelect: null,
+        explodedGap: 140,
+        falloff: 0.5,
+        viewportCenterX: null,
+      }, opts);
+
+      const SVGNS = 'http://www.w3.org/2000/svg';
+      svg.innerHTML = '';
+
+      const totalHours = data.reduce((s, d) => s + d.hours, 0);
+      const widths = data.map(d => (d.hours / totalHours) * o.totalWidth);
+
+      // Edge-fade mask — always present in DOM, toggled on the stage via mask attribute.
+      const maskId = 'edgeFade-' + Math.random().toString(36).slice(2, 8);
+      const defs = document.createElementNS(SVGNS, 'defs');
+      defs.innerHTML = `
+        <linearGradient id="${maskId}-grad" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stop-color="white" stop-opacity="0" />
+          <stop offset="14%" stop-color="white" stop-opacity="1" />
+          <stop offset="86%" stop-color="white" stop-opacity="1" />
+          <stop offset="100%" stop-color="white" stop-opacity="0" />
+        </linearGradient>
+        <mask id="${maskId}">
+          <rect x="0" y="0" width="1200" height="240" fill="url(#${maskId}-grad)" />
+        </mask>
+      `;
+      svg.appendChild(defs);
+
+      const stage = document.createElementNS(SVGNS, 'g');
+      stage.setAttribute('class', 'stage');
+      svg.appendChild(stage);
+
+      // Build each segment once with local-origin geometry (all 3 faces; cap opacity toggles).
+      const segs = data.map((d, idx) => {
+        const w = widths[idx];
+        const g = document.createElementNS(SVGNS, 'g');
+        g.setAttribute('class', 'segment-group');
+        g.setAttribute('data-idx', idx);
+        g.setAttribute('data-id', d.id);
+
+        const top = mkPolygon(SVGNS, [
+          [0, o.y0 - o.height],
+          [w, o.y0 - o.height],
+          [w + o.dx, o.y0 - o.height - o.dy],
+          [o.dx, o.y0 - o.height - o.dy],
+        ], 'face face-top');
+
+        const front = mkPolygon(SVGNS, [
+          [0, o.y0],
+          [w, o.y0],
+          [w, o.y0 - o.height],
+          [0, o.y0 - o.height],
+        ], 'face face-front');
+
+        const cap = mkPolygon(SVGNS, [
+          [w, o.y0],
+          [w + o.dx, o.y0 - o.dy],
+          [w + o.dx, o.y0 - o.height - o.dy],
+          [w, o.y0 - o.height],
+        ], 'face face-cap');
+
+        g.appendChild(top);
+        g.appendChild(front);
+        g.appendChild(cap);
+
+        if (o.interactive) {
+          g.addEventListener('click', () => o.onSelect && o.onSelect(idx));
+        }
+
+        stage.appendChild(g);
+        return { g, top, front, cap, w };
+      });
+
+      function computeLefts(selectedIdx) {
+        const exploded = selectedIdx >= 0;
+        const lefts = new Array(data.length);
+        if (!exploded) {
+          let cursor = o.x0;
+          widths.forEach((w, i) => { lefts[i] = cursor; cursor += w; });
+          return lefts;
+        }
+        const cx = o.viewportCenterX ?? (o.x0 + o.totalWidth / 2);
+        const selW = widths[selectedIdx];
+        lefts[selectedIdx] = cx - selW / 2;
+        let x = lefts[selectedIdx];
+        for (let i = selectedIdx - 1; i >= 0; i--) {
+          x -= (widths[i] + o.explodedGap);
+          lefts[i] = x;
+        }
+        x = lefts[selectedIdx] + selW;
+        for (let i = selectedIdx + 1; i < data.length; i++) {
+          x += o.explodedGap;
+          lefts[i] = x;
+          x += widths[i];
+        }
+        return lefts;
+      }
+
+      function update(selectedIdx) {
+        const exploded = selectedIdx >= 0;
+        // Mask snap: cheap, masked by per-segment opacity transitions.
+        if (exploded) stage.setAttribute('mask', `url(#${maskId})`);
+        else stage.removeAttribute('mask');
+
+        const lefts = computeLefts(selectedIdx);
+
+        segs.forEach((seg, idx) => {
+          const d = data[idx];
+          const isLast = idx === data.length - 1;
+          const isHollow = exploded && idx !== selectedIdx;
+          const showCap = exploded || isLast;
+          const dist = exploded ? Math.abs(idx - selectedIdx) : 0;
+          const opacity = exploded && dist > 0
+            ? Math.max(0.04, Math.pow(1 - o.falloff, dist))
+            : 1;
+
+          seg.g.setAttribute('transform', `translate(${lefts[idx]}, 0)`);
+          seg.g.style.opacity = opacity;
+          seg.g.classList.toggle('hollow', isHollow);
+
+          const frontFill = isHollow ? hexAlpha(d.front, 0.08) : d.front;
+          const topFill   = isHollow ? hexAlpha(d.front, 0.04) : d.top;
+          const capFill   = isHollow ? hexAlpha(d.front, 0.12) : shade(d.front, -0.08);
+          const stroke    = isHollow ? d.front : o.strokeColor;
+          const sw        = isHollow ? 1.5 : o.strokeWidth;
+
+          applyStyle(seg.front, frontFill, stroke, sw, 1);
+          applyStyle(seg.top,   topFill,   stroke, sw, 1);
+          applyStyle(seg.cap,   capFill,   stroke, sw, showCap ? 1 : 0);
+        });
+      }
+
+      // Apply initial state immediately (no transition on first paint).
+      update(-1);
+      // If an initial selectedIdx was passed, defer so transitions kick in.
+      if ((opts || {}).selectedIdx !== undefined && opts.selectedIdx >= 0) {
+        requestAnimationFrame(() => update(opts.selectedIdx));
+      }
+
+      return { update };
+    }
+
+    function applyStyle(el, fill, stroke, sw, opacity) {
+      el.style.fill = fill;
+      el.style.stroke = stroke;
+      el.style.strokeWidth = sw;
+      el.style.opacity = opacity;
+    }
+
+    function mkPolygon(SVGNS, pts, cls) {
+      const p = document.createElementNS(SVGNS, 'polygon');
+      p.setAttribute('class', cls);
+      p.setAttribute('points', pts.map(pt => pt.join(',')).join(' '));
+      return p;
+    }
+
+    // hex -> rgba string with given alpha
+    function hexAlpha(hex, a) {
+      const num = parseInt(hex.replace('#',''), 16);
+      const r = (num >> 16) & 0xff;
+      const g = (num >> 8) & 0xff;
+      const b = num & 0xff;
+      return `rgba(${r},${g},${b},${a})`;
+    }
+
+    // Lighten/darken hex color by amt (-1..1)
+    function shade(hex, amt) {
+      const num = parseInt(hex.replace('#',''), 16);
+      let r = (num >> 16) & 0xff;
+      let g = (num >> 8) & 0xff;
+      let b = num & 0xff;
+      r = Math.min(255, Math.max(0, Math.round(r + 255 * amt)));
+      g = Math.min(255, Math.max(0, Math.round(g + 255 * amt)));
+      b = Math.min(255, Math.max(0, Math.round(b + 255 * amt)));
+      return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
+    }
+
+    // --- Variant A: faithful recreation
+    createPrism(document.getElementById('prismA'), SAMPLE, {});
+    // Legend
+    const legendA = document.getElementById('legendA');
+    SAMPLE.forEach(d => {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      const sw = document.createElement('span');
+      sw.className = 'legend-swatch';
+      sw.style.background = d.front;
+      item.appendChild(sw);
+      const total = SAMPLE.reduce((s,x) => s + x.hours, 0);
+      const pct = Math.round(d.hours / total * 100);
+      item.appendChild(document.createTextNode(`${d.label} · ${d.hours}h · ${pct}%`));
+      legendA.appendChild(item);
+    });
+
+    // --- Variant B: interactive with animated transitions
+    const svgB = document.getElementById('prismB');
+    let selectedB = -1;
+
+    const prismB = createPrism(svgB, SAMPLE, {
+      interactive: true,
+      onSelect: (idx) => {
+        selectedB = (selectedB === idx) ? -1 : idx;
+        syncButtons();
+        prismB.update(selectedB);
+      },
+    });
+
+    function syncButtons() {
+      document.querySelectorAll('[data-select]').forEach(btn => {
+        const v = parseInt(btn.dataset.select);
+        btn.classList.toggle('active', v === selectedB);
+      });
+    }
+    document.querySelectorAll('[data-select]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedB = parseInt(btn.dataset.select);
+        syncButtons();
+        prismB.update(selectedB);
+      });
+    });
+
+    // --- Variant C: angle variations
+    createPrism(document.getElementById('prismC1'), SAMPLE, { y0: 150, height: 90, totalWidth: 1080, dx: 18, dy: 10 });
+    createPrism(document.getElementById('prismC2'), SAMPLE, { y0: 150, height: 90, totalWidth: 1080, dx: 26, dy: 16 });
+    createPrism(document.getElementById('prismC3'), SAMPLE, { y0: 150, height: 90, totalWidth: 1080, dx: 34, dy: 24 });
+
+    // --- Variant D: edge cases
+    createPrism(document.getElementById('prismD1'),
+      [ { id:'only', label:'Reading', hours:100, front:'#8ABFF4', top:'#B5D6F8' } ],
+      { y0: 150, height: 90, totalWidth: 1080, dx: 26, dy: 16 });
+
+    createPrism(document.getElementById('prismD2'), [
+      { id:'a', label:'A', hours:30, front:'#8ABFF4', top:'#B5D6F8' },
+      { id:'b', label:'B', hours:25, front:'#FFB84D', top:'#FFD089' },
+      { id:'c', label:'C', hours:18, front:'#F29FBD', top:'#F8C3D5' },
+      { id:'d', label:'D', hours:12, front:'#A28BE6', top:'#C3B1EE' },
+      { id:'e', label:'E', hours:8,  front:'#7DD3B8', top:'#A8E2CE' },
+      { id:'f', label:'F', hours:4,  front:'#F5D36B', top:'#F9E298' },
+      { id:'g', label:'G', hours:3,  front:'#6BC5E8', top:'#9CD9EF' },
+    ], { y0: 150, height: 90, totalWidth: 1080, dx: 26, dy: 16 });
+  </script>
+</body>
+</html>

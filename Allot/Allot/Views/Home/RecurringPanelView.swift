@@ -12,6 +12,7 @@ struct RecurringPanelView: View {
     let task: WorkTask
     let date: Date
     let onEdit: () -> Void
+    var onStart: () -> Void = {}
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -55,6 +56,21 @@ struct RecurringPanelView: View {
                         .padding(.top, 8)
                     }
 
+                    // Start (primary)
+                    Button {
+                        dismiss()
+                        onStart()
+                    } label: {
+                        Label("Start", systemImage: "play.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.bgPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.textPrimary, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 16)
+
                     // Edit + Remove
                     HStack(spacing: 8) {
                         Button {
@@ -82,7 +98,7 @@ struct RecurringPanelView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(.top, 16)
+                    .padding(.top, 8)
 
                     Divider().padding(.vertical, 24)
 

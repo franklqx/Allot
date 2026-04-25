@@ -2,46 +2,69 @@
 //  DesignTokens.swift
 //  Allot
 //
-//  Design system color + font tokens. Single source of truth for the warm-paper aesthetic.
-//  All raw values from DESIGN.md §3.
+//  Design system v0.2 — Apple-native minimal (inspired by Robinhood 2024 + Origin).
+//  Single source of truth for colors, fonts, radii. See DESIGN.md §2.
 
 import SwiftUI
 
 // MARK: Colors
 
 extension Color {
-    // Accent
-    static let accentPrimary    = Color(hex: "#E5544A")  // coral, light mode
-    static let accentDark       = Color(hex: "#FF6B5C")  // coral, dark mode
+    // ── Neutrals: system-adaptive ────────────────────────
+    // bgPrimary   : Light #FFFFFF / Dark #000000
+    // bgSecondary : grouped grays
+    // bgElevated  : sheet / card surface
+    static let bgPrimary   = Color(UIColor.systemBackground)
+    static let bgSecondary = Color(UIColor.secondarySystemBackground)
+    static let bgElevated  = Color(UIColor.systemBackground)
+    static let bgGrouped   = Color(UIColor.systemGroupedBackground)
 
-    // Backgrounds
-    static let bgPrimary        = Color(hex: "#FBF7F1")
-    static let bgSecondary      = Color(hex: "#F4EFE6")
-    static let bgElevated       = Color(hex: "#FFFFFF")
+    // ── Text: alpha-based system labels ──────────────────
+    static let textPrimary   = Color(UIColor.label)
+    static let textSecondary = Color(UIColor.secondaryLabel)
+    static let textTertiary  = Color(UIColor.tertiaryLabel)
+    static let textQuaternary = Color(UIColor.quaternaryLabel)
 
-    // Text
-    static let textPrimary      = Color(hex: "#1C1814")
-    static let textSecondary    = Color(hex: "#6B6359")
-    static let textTertiary     = Color(hex: "#A39A8C")
+    // ── "Accent" is just system chrome (black on light, white on dark) ──
+    // No global accent color. These aliases remain so old call-sites compile.
+    static let accentPrimary = Color(UIColor.label)
+    static let accentDark    = Color(UIColor.label)
 
-    // States
-    static let stateSuccess     = Color(hex: "#6F8F5C")
-    static let stateWarning     = Color(hex: "#C9853D")
-    static let stateDestructive = Color(hex: "#B84A3E")
+    // ── States ───────────────────────────────────────────
+    // Red lives ONLY on Destructive buttons. Don't use anywhere else.
+    static let stateDestructive = Color(UIColor.systemRed)
+    static let stateSuccess     = Color(UIColor.label)   // neutral chrome
+    static let stateWarning     = Color(UIColor.label)   // neutral chrome
 
-    // Tag palette (light mode base colors)
-    static let tagCoral         = Color(hex: "#E5544A")
-    static let tagMarigold      = Color(hex: "#E08A3C")
-    static let tagMustard       = Color(hex: "#C9A227")
-    static let tagSage          = Color(hex: "#7A9272")
-    static let tagOlive         = Color(hex: "#6F7A3D")
-    static let tagTeal          = Color(hex: "#3E8079")
-    static let tagPowder        = Color(hex: "#7896A8")
-    static let tagPeriwinkle    = Color(hex: "#7C7BB0")
-    static let tagMauve         = Color(hex: "#A574A0")
-    static let tagTerracotta    = Color(hex: "#B0593F")
-    static let tagRose          = Color(hex: "#C76A7A")
-    static let tagStone         = Color(hex: "#9C928A")
+    // ── Data palette (12 colors, DESIGN.md §2.3) ─────────
+    // Preset tag mapping:
+    //   Work     → Sky
+    //   Health   → Lime
+    //   Learn    → Lilac
+    //   Life     → Marigold
+    //   Hobby    → Rose
+    //   Leisure  → Teal
+    //   Untagged → Gray
+    static let tagSky      = Color(hex: "#5BB2E8")
+    static let tagAmber    = Color(hex: "#F89C58")
+    static let tagRose     = Color(hex: "#EFB0C0")
+    static let tagLilac    = Color(hex: "#B084F5")
+    static let tagLime     = Color(hex: "#A8C66C")
+    static let tagMarigold = Color(hex: "#F5B950")
+    static let tagTeal     = Color(hex: "#7DB6B0")
+    static let tagCoral    = Color(hex: "#E3472C")
+    static let tagPlum     = Color(hex: "#5F2C82")
+    static let tagMustard  = Color(hex: "#D9B64A")
+    static let tagSage     = Color(hex: "#8FB089")
+    static let tagGray     = Color(hex: "#8A8F96")
+
+    // ── Legacy aliases (v0.1 → v0.2) so existing tag data doesn't break ──
+    static let tagOlive       = tagSage
+    static let tagPowder      = tagSky
+    static let tagPeriwinkle  = tagLilac
+    static let tagMauve       = tagLilac
+    static let tagTerracotta  = tagCoral
+    static let tagStone       = tagGray
 
     init(hex: String) {
         let h = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
@@ -56,25 +79,35 @@ extension Color {
 // MARK: Tag color lookup
 
 extension Color {
-    /// Returns the base color for a tag color token (e.g. "coral" → .tagCoral).
+    /// Returns the base color for a tag color token (e.g. "sky" → .tagSky).
+    /// Backward-compatible with v0.1 tokens.
     static func tagColor(_ token: String) -> Color {
         switch token {
-        case "coral":       return .tagCoral
+        // v0.2 tokens
+        case "sky":         return .tagSky
+        case "amber":       return .tagAmber
+        case "rose":        return .tagRose
+        case "lilac":       return .tagLilac
+        case "lime":        return .tagLime
         case "marigold":    return .tagMarigold
+        case "teal":        return .tagTeal
+        case "coral":       return .tagCoral
+        case "plum":        return .tagPlum
         case "mustard":     return .tagMustard
         case "sage":        return .tagSage
-        case "olive":       return .tagOlive
-        case "teal":        return .tagTeal
-        case "powder":      return .tagPowder
-        case "periwinkle":  return .tagPeriwinkle
-        case "mauve":       return .tagMauve
-        case "terracotta":  return .tagTerracotta
-        case "rose":        return .tagRose
-        default:            return .tagStone  // "stone" + unknown
+        case "gray":        return .tagGray
+        // v0.1 legacy tokens
+        case "powder":      return .tagSky
+        case "periwinkle":  return .tagLilac
+        case "mauve":       return .tagLilac
+        case "olive":       return .tagSage
+        case "terracotta":  return .tagCoral
+        case "stone":       return .tagGray
+        default:            return .tagGray
         }
     }
 
-    /// Soft (background) variant — 10% opacity of base.
+    /// Soft (background) variant — 12% opacity of base.
     static func tagColorSoft(_ token: String) -> Color {
         tagColor(token).opacity(0.12)
     }
