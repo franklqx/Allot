@@ -102,16 +102,16 @@ private struct DayCell: View {
     private let cal = Calendar.current
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             let weekday = cal.component(.weekday, from: date)
             let letters = ["SUN","MON","TUE","WED","THU","FRI","SAT"]
             Text(letters[weekday - 1])
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isSelected ? Color.bgPrimary.opacity(0.75) : Color.textTertiary)
                 .kerning(0.5)
 
             Text("\(cal.component(.day, from: date))")
-                .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
+                .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(isSelected ? Color.bgPrimary : Color.textPrimary)
 
             Circle()
@@ -119,7 +119,7 @@ private struct DayCell: View {
                 .frame(width: 4, height: 4)
                 .opacity(isToday && !isSelected ? 1 : 0)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 14)
