@@ -138,7 +138,8 @@ struct PrismChartView: View {
 
             ZStack(alignment: .topLeading) {
                 ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
-                    let w       = widths[idx]
+                    let rawW     = widths[idx]
+                    let w        = max(rawW, 8)            // tappable minimum
                     let isHollow = exploded && idx != selIdx
                     let isLast   = idx == segments.count - 1
                     let showCap  = exploded || isLast
@@ -147,20 +148,26 @@ struct PrismChartView: View {
                         ? max(0.04, pow(1 - falloff, Double(dist)))
                         : 1
 
-                    PrismSegmentView(
-                        width: w,
-                        height: barHeight,
-                        dx: depthX, dy: depthY,
-                        frontColor: isHollow ? seg.color.opacity(0.10) : seg.color,
-                        topColor:   isHollow ? seg.color.opacity(0.05) : seg.color.shaded(by:  0.12),
-                        capColor:   isHollow ? seg.color.opacity(0.14) : seg.color.shaded(by: -0.08),
-                        strokeColor: isHollow ? seg.color : Color.bgPrimary,
-                        strokeWidth: strokeWidth,
-                        capOpacity:  showCap ? 1 : 0
-                    )
-                    .offset(x: lefts[idx], y: yOffset)
-                    .opacity(op)
+                    ZStack(alignment: .topLeading) {
+                        PrismSegmentView(
+                            width: w,
+                            height: barHeight,
+                            dx: depthX, dy: depthY,
+                            frontColor: isHollow ? seg.color.opacity(0.10) : seg.color,
+                            topColor:   isHollow ? seg.color.opacity(0.05) : seg.color.shaded(by:  0.12),
+                            capColor:   isHollow ? seg.color.opacity(0.14) : seg.color.shaded(by: -0.08),
+                            strokeColor: isHollow ? seg.color : Color.bgPrimary,
+                            strokeWidth: strokeWidth,
+                            capOpacity:  showCap ? 1 : 0
+                        )
+                        .padding(.vertical, 10)
+                    }
+                    .frame(width: max(w + depthX, 32),
+                           height: barHeight + depthY + 20,
+                           alignment: .topLeading)
                     .contentShape(Rectangle())
+                    .offset(x: lefts[idx], y: yOffset - 10)
+                    .opacity(op)
                     .onTapGesture { onTapSegment(seg.id) }
                 }
             }
@@ -168,10 +175,10 @@ struct PrismChartView: View {
             .mask {
                 LinearGradient(
                     stops: exploded
-                        ? [.init(color: .clear, location: 0.00),
-                           .init(color: .black, location: 0.14),
-                           .init(color: .black, location: 0.86),
-                           .init(color: .clear, location: 1.00)]
+                        ? [.init(color: .black.opacity(0.18), location: 0.00),
+                           .init(color: .black,               location: 0.14),
+                           .init(color: .black,               location: 0.86),
+                           .init(color: .black.opacity(0.18), location: 1.00)]
                         : [.init(color: .black, location: 0.00),
                            .init(color: .black, location: 1.00)],
                     startPoint: .leading, endPoint: .trailing

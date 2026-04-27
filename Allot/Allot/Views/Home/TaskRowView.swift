@@ -3,8 +3,12 @@
 //  Allot
 //
 //  Single task row. Two independent tap targets:
-//    • LEFT icon (○ / ☐ / ✓ / running clock) → tap triggers completion flow
+//    • LEFT icon (TaskBox / running clock) → tap triggers completion flow
 //    • ROW body → tap opens action sheet: Start / Adjust / Remove
+//
+//  Visual rule: tasks are always squares (TaskBox). Tags are always circles.
+//  Right meta always shows the planned start time (if any). When completed,
+//  the actual worked duration appears as a small subtitle under the title.
 
 import SwiftUI
 
@@ -19,15 +23,16 @@ struct TaskRowView: View {
     private var isCompleted: Bool { task.isCompleted(on: date) }
     private var workedSeconds: Int { task.workedSeconds(on: date) }
 
+    /// Box color. Even when completed we keep the original tag color so the
+    /// row still reads as that tag — the gray checkmark inside is the
+    /// completion signal.
     private var iconColor: Color {
-        if isCompleted { return Color.textTertiary }
         if let tag = task.tag, !tag.isSystem { return Color.tagColor(tag.colorToken) }
         return Color.textSecondary
     }
 
     var body: some View {
         HStack(spacing: 12) {
-            // LEFT: icon button (independent tap target)
             Button(action: onIconTap) {
                 TaskIconView(
                     type: task.type,
@@ -41,19 +46,29 @@ struct TaskRowView: View {
             .contentShape(Rectangle())
             .frame(width: 28, height: 28)
 
-            // RIGHT: row body button
             Button(action: onRowTap) {
                 HStack(spacing: 0) {
-                    Text(task.title)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(isCompleted ? Color.textTertiary : Color.textPrimary)
-                        .lineLimit(1)
-                        .strikethrough(isCompleted, color: Color.textTertiary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(task.title)
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundStyle(isCompleted ? Color.textTertiary : Color.textPrimary)
+                            .lineLimit(1)
+
+                        if workedSeconds > 0 {
+                            Text(formatDuration(workedSeconds))
+                                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                .foregroundStyle(Color.textTertiary)
+                        }
+                    }
 
                     Spacer()
 
                     rightMeta
                 }
+                // Pin overall row body height so rows with / without a
+                // duration line stay the same vertical size, but the title
+                // sits in the vertical center when there is no duration.
+                .frame(minHeight: 36)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -65,11 +80,7 @@ struct TaskRowView: View {
 
     @ViewBuilder
     private var rightMeta: some View {
-        if isCompleted && workedSeconds > 0 {
-            Text(formatDuration(workedSeconds))
-                .font(.system(size: 13, weight: .regular, design: .monospaced))
-                .foregroundStyle(Color.textTertiary)
-        } else if !isRunning, let startTime = task.startTime {
+        if !isRunning, let startTime = task.startTime {
             Text(formatStartTime(startTime))
                 .font(.system(size: 14, weight: .regular, design: .monospaced))
                 .foregroundStyle(isCompleted ? Color.textTertiary : Color.textSecondary)
@@ -89,42 +100,24 @@ private struct TaskIconView: View {
     var body: some View {
         ZStack {
             if isRunning {
-                // Inline mini mm:ss clock replaces the icon while running
                 Text(compactClock(elapsedSeconds))
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.textPrimary)
                     .frame(width: 28, height: 22)
                     .background(Color.textPrimary.opacity(0.08), in: Capsule())
                     .animation(nil, value: elapsedSeconds)
-            } else if type == .recurring {
-                // Dashed circle
-                Circle()
-                    .fill(isCompleted ? color : .clear)
-                    .frame(width: 22, height: 22)
-                Circle()
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2.5]))
-                    .foregroundStyle(color)
-                    .frame(width: 22, height: 22)
-
-                if isCompleted {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.bgPrimary)
-                }
             } else {
-                // Solid rounded rect
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(isCompleted ? color : .clear)
-                    .frame(width: 22, height: 22)
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(lineWidth: 1.5)
-                    .foregroundStyle(color)
-                    .frame(width: 22, height: 22)
+                TaskBox(
+                    color: color,
+                    style: TaskBox.style(for: type),
+                    size: 22,
+                    cornerRadius: 5
+                )
 
                 if isCompleted {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.bgPrimary)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color.textTertiary)
                 }
             }
         }

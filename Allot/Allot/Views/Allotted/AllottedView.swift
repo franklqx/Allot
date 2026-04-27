@@ -16,13 +16,15 @@ enum TimeRange: String, CaseIterable {
     case year  = "Year"
 
     func interval(from now: Date = Date()) -> (start: Date, end: Date) {
-        let cal = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2     // Monday — week always runs Mon→Sun.
         switch self {
         case .day:
             let s = cal.startOfDay(for: now)
             return (s, cal.date(byAdding: .day, value: 1, to: s)!)
         case .week:
-            let s = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+            let s = cal.dateInterval(of: .weekOfYear, for: now)?.start
+                ?? cal.startOfDay(for: now)
             return (s, cal.date(byAdding: .weekOfYear, value: 1, to: s)!)
         case .month:
             let s = cal.date(from: cal.dateComponents([.year, .month], from: now))!
@@ -38,7 +40,7 @@ enum AllotMode: String, CaseIterable {
     case task = "Task"
     case tag  = "Tag"
 
-    /// The two time-range tabs shown for this mode.
+    /// Time-range tabs shown for this mode.
     var ranges: [TimeRange] {
         switch self {
         case .task: return [.day, .week]
@@ -63,23 +65,35 @@ struct AllotStat: Identifiable {
     var seconds: Int
     var fraction: Double = 0
     let isOthers: Bool
+    /// Source items that were merged into this Others bucket (only set on the
+    /// synthetic Others stat). Each element mirrors a top-level AllotStat.
+    var othersChildren: [OthersChild]? = nil
 }
 
-// Fixed IDs for synthetic categories
+struct OthersChild: Identifiable {
+    let id: UUID
+    let name: String
+    let colorToken: String
+    let seconds: Int
+    let isTagItem: Bool   // true → render circle; false → render box
+}
+
 private let untaggedStatId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 private let unboundStatId  = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
 private let othersStatId   = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
 
-/// Max individual segments before rest is bucketed into "Others".
 private let kMaxIndividualSegments = 5
 
-/// Palette used in Task mode so each task gets a distinct color
-/// (tasks may share a tag color, which would render the prism as one blob).
 private let kTaskPalette: [String] = ["sky", "marigold", "rose", "lilac", "lime", "teal"]
 
 // MARK: - AllottedView
 
 struct AllottedView: View {
+
+    /// Single shared date, owned by ContentView. Home strip and Allotted anchor
+    /// read/write the same value so navigating one updates the other and the
+    /// FAB-to-today action can reset both at once.
+    @Binding var anchorDate: Date
 
     @Query private var allSessions: [TimeSession]
 
@@ -90,6 +104,12 @@ struct AllottedView: View {
     @State private var hiddenTagIds:    Set<UUID> = []
     @State private var taskTypeFilter:  TaskType? = nil
     @State private var highlightId:     UUID?     = nil
+    @State private var expandedLegendId: UUID?    = nil   // legend (tag mode) expansion
+    @State private var expandedByTagId:  UUID?    = nil   // "By Tag" supplementary section (task mode)
+
+    init(anchorDate: Binding<Date>) {
+        self._anchorDate = anchorDate
+    }
 
     private var timeRange: TimeRange {
         mode == .task ? taskRange : tagRange
@@ -98,7 +118,7 @@ struct AllottedView: View {
     // MARK: Computed — sessions
 
     var filteredSessions: [TimeSession] {
-        let (start, end) = timeRange.interval()
+        let (start, end) = timeRange.interval(from: anchorDate)
         return allSessions.filter { s in
             guard s.endAt != nil else { return false }
             guard s.startAt >= start && s.startAt < end else { return false }
@@ -110,9 +130,48 @@ struct AllottedView: View {
         }
     }
 
+    // MARK: Period navigation
+
+    private var periodLabel: String {
+        let cal = Calendar.current
+        let (start, end) = timeRange.interval(from: anchorDate)
+        switch timeRange {
+        case .day:
+            return start.formatted(.dateTime.month(.abbreviated).day())
+        case .week:
+            let last = cal.date(byAdding: .day, value: -1, to: end) ?? end
+            let s = start.formatted(.dateTime.month(.abbreviated).day())
+            let e = last.formatted(.dateTime.month(.abbreviated).day())
+            return "\(s) – \(e)"
+        case .month:
+            return start.formatted(.dateTime.month(.wide).year())
+        case .year:
+            return start.formatted(.dateTime.year())
+        }
+    }
+
+    private func shiftPeriod(by offset: Int) {
+        let cal = Calendar.current
+        let component: Calendar.Component
+        switch timeRange {
+        case .day:   component = .day
+        case .week:  component = .weekOfYear
+        case .month: component = .month
+        case .year:  component = .year
+        }
+        if let next = cal.date(byAdding: component, value: offset, to: anchorDate) {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.easeInOut(duration: 0.18)) {
+                anchorDate = next
+                highlightId = nil
+                expandedLegendId = nil
+                expandedByTagId = nil
+            }
+        }
+    }
+
     // MARK: Computed — aggregation
 
-    /// Aggregate filtered sessions by tag or task, then bucket rest into Others.
     var stats: [AllotStat] {
         switch mode {
         case .tag:  return aggregateByTag(filteredSessions)
@@ -167,8 +226,6 @@ struct AllottedView: View {
                       colorToken: v.2, seconds: v.3, isOthers: false)
         }
         var capped = paretoCap(raw)
-        // Re-color non-Others rows from the task palette by sorted position so
-        // the prism always shows distinct segments.
         var paletteIdx = 0
         for i in capped.indices where !capped[i].isOthers {
             capped[i].colorToken = kTaskPalette[paletteIdx % kTaskPalette.count]
@@ -177,8 +234,6 @@ struct AllottedView: View {
         return capped
     }
 
-    /// Sort descending, keep top 5 individual; if 6+ items exist, bucket rest as "Others".
-    /// Fractions computed over grand total (never renormalized) so bar widths stay true.
     private func paretoCap(_ items: [AllotStat]) -> [AllotStat] {
         let sorted = items.sorted { $0.seconds > $1.seconds }
         let total = sorted.reduce(0) { $0 + $1.seconds }
@@ -196,13 +251,24 @@ struct AllottedView: View {
         var result: [AllotStat] = head.map { s in
             var out = s; out.fraction = Double(s.seconds) / Double(total); return out
         }
-        result.append(AllotStat(
+        let children = tail.map { s in
+            OthersChild(
+                id: s.id,
+                name: s.name,
+                colorToken: s.colorToken,
+                seconds: s.seconds,
+                isTagItem: s.tag != nil || s.id == untaggedStatId || s.id == unboundStatId
+            )
+        }
+        var others = AllotStat(
             id: othersStatId, tag: nil, task: nil,
             name: "Others", colorToken: "gray",
             seconds: othersSec,
             fraction: Double(othersSec) / Double(total),
             isOthers: true
-        ))
+        )
+        others.othersChildren = children
+        result.append(others)
         return result
     }
 
@@ -225,6 +291,10 @@ struct AllottedView: View {
             VStack(spacing: 0) {
                 timeRangePicker
                 Divider().foregroundStyle(Color.textPrimary.opacity(0.06))
+                periodHeader
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 8)
                 if totalSeconds == 0 {
                     emptyState
                 } else {
@@ -232,6 +302,18 @@ struct AllottedView: View {
                 }
             }
             .background(Color.bgPrimary)
+            // Horizontal swipe shifts the period — works in empty state too.
+            .gesture(
+                DragGesture(minimumDistance: 30)
+                    .onEnded { value in
+                        let threshold: CGFloat = 50
+                        if value.translation.width < -threshold {
+                            shiftPeriod(by: 1)
+                        } else if value.translation.width > threshold {
+                            shiftPeriod(by: -1)
+                        }
+                    }
+            )
             .navigationTitle("Allotted")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -245,23 +327,41 @@ struct AllottedView: View {
                 }
             }
             .sheet(isPresented: $showFilter) {
-                FilterDrawerView(hiddenTagIds: $hiddenTagIds, taskTypeFilter: $taskTypeFilter)
+                FilterDrawerView(mode: $mode,
+                                 hiddenTagIds: $hiddenTagIds,
+                                 taskTypeFilter: $taskTypeFilter)
                     .presentationDetents([.medium])
                     .presentationBackground(Color.bgElevated)
+            }
+            .onChange(of: mode) { _, _ in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    highlightId = nil
+                    expandedLegendId = nil
+                    expandedByTagId = nil
+                }
+            }
+            .onChange(of: timeRange) { _, _ in
+                expandedLegendId = nil
+                expandedByTagId = nil
             }
         }
     }
 
-    // MARK: Time range picker (2 tabs, mode-aware)
+    // MARK: Time range picker
 
     private var timeRangePicker: some View {
         let ranges = mode.ranges
         return HStack(spacing: 0) {
             ForEach(ranges, id: \.self) { range in
                 Button {
+                    if range != timeRange {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
                     withAnimation(.easeInOut(duration: 0.18)) {
                         setRange(range)
                         highlightId = nil
+                        expandedLegendId = nil
+                        expandedByTagId = nil
                     }
                 } label: {
                     Text(range.rawValue)
@@ -292,30 +392,32 @@ struct AllottedView: View {
         if mode == .task { taskRange = range } else { tagRange = range }
     }
 
-    private func setMode(_ newMode: AllotMode) {
-        guard newMode != mode else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            mode = newMode
-            highlightId = nil
-        }
-    }
-
     // MARK: Chart content
 
     private var chartContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                headerRow
+                totalRow
                     .padding(.horizontal, 20)
-                    .padding(.top, 20)
+                    .padding(.top, 8)
                     .padding(.bottom, 20)
 
                 PrismChartView(
                     segments: segments,
                     highlightId: highlightId,
                     onTapSegment: { id in
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
                             highlightId = (highlightId == id) ? nil : id
+                            // In tag mode (or for the Others bucket in either
+                            // mode), also pop the legend row open so the user
+                            // can read the breakdown without scrolling-and-tapping.
+                            let stat = stats.first(where: { $0.id == id })
+                            let canExpand = stat?.isOthers == true ||
+                                (mode == .tag && stat != nil)
+                            if canExpand {
+                                expandedLegendId = (expandedLegendId == id) ? nil : id
+                            }
                         }
                     }
                 )
@@ -334,50 +436,61 @@ struct AllottedView: View {
         }
     }
 
-    // MARK: Header row — big duration + Task/Tag pill
+    // MARK: Period header
 
-    private var headerRow: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(formatDuration(totalSeconds))
-                    .font(.system(size: 34, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.textPrimary)
-                Text(timeRange.rawValue)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.textTertiary)
+    private var periodHeader: some View {
+        HStack(spacing: 4) {
+            Button { shiftPeriod(by: -1) } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.textSecondary)
+                    .frame(width: 36, height: 32)
             }
-            Spacer()
-            modePill
+            .buttonStyle(.plain)
+
+            Text(periodLabel)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.textPrimary)
+                .frame(maxWidth: .infinity)
+                .contentTransition(.numericText())
+
+            Button { shiftPeriod(by: 1) } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.textSecondary)
+                    .frame(width: 36, height: 32)
+            }
+            .buttonStyle(.plain)
+            .disabled(isFutureDisabled)
+            .opacity(isFutureDisabled ? 0.3 : 1)
         }
     }
 
-    private var modePill: some View {
-        HStack(spacing: 0) {
-            ForEach(AllotMode.allCases, id: \.self) { m in
-                Button {
-                    setMode(m)
-                } label: {
-                    Text(m.rawValue)
-                        .font(.system(size: 12, weight: mode == m ? .semibold : .regular))
-                        .foregroundStyle(mode == m ? Color.bgPrimary : Color.textSecondary)
-                        .frame(minWidth: 44)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 10)
-                        .background(
-                            ZStack {
-                                if mode == m {
-                                    Capsule().fill(Color.textPrimary)
-                                }
-                            }
-                        )
-                }
-                .buttonStyle(.plain)
-            }
+    private var isFutureDisabled: Bool {
+        let cal = Calendar.current
+        let component: Calendar.Component
+        switch timeRange {
+        case .day:   component = .day
+        case .week:  component = .weekOfYear
+        case .month: component = .month
+        case .year:  component = .year
         }
-        .padding(3)
-        .background(
-            Capsule().fill(Color.textPrimary.opacity(0.06))
-        )
+        guard let next = cal.date(byAdding: component, value: 1, to: anchorDate) else { return true }
+        let (start, _) = timeRange.interval(from: next)
+        return start > Date()
+    }
+
+    private var totalRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(formatDuration(totalSeconds))
+                .font(.system(size: 34, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.textPrimary)
+            Text(mode.rawValue)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.textTertiary)
+                .padding(.leading, 4)
+            Spacer()
+        }
     }
 
     // MARK: Legend (Pareto rows with per-row progress bar)
@@ -386,42 +499,51 @@ struct AllottedView: View {
         VStack(spacing: 0) {
             ForEach(stats) { stat in
                 legendRow(stat: stat)
-                Divider()
-                    .padding(.leading, 44)
-                    .foregroundStyle(Color.textPrimary.opacity(0.06))
+                if expandedLegendId == stat.id {
+                    inlineBreakdown(stat: stat)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                DottedDivider()
             }
         }
     }
 
+    /// Expandable when there's something useful to drill into:
+    ///   • tag mode legend: real tag / Untagged / Others (any stat with content)
+    ///   • Others row in either mode (shows merged source items)
     @ViewBuilder
     private func legendRow(stat: AllotStat) -> some View {
         let dimmed = highlightId != nil && highlightId != stat.id
+        let expandable: Bool = {
+            if stat.isOthers, let kids = stat.othersChildren, !kids.isEmpty { return true }
+            if mode == .tag { return !legendBreakdownEntries(for: stat).isEmpty }
+            return false
+        }()
+        let isExpanded = expandable && expandedLegendId == stat.id
 
-        // Only tags (in tag mode) navigate to drill page.
-        if mode == .tag, let tag = stat.tag {
-            NavigationLink {
-                AllottedDrillView(tag: tag, timeRange: timeRange, sessions: filteredSessions)
-            } label: {
-                legendLabel(stat: stat, dimmed: dimmed, showChevron: true)
-            }
-        } else {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.easeInOut(duration: 0.22)) {
+                if expandable {
+                    expandedLegendId = (expandedLegendId == stat.id) ? nil : stat.id
+                    highlightId = (expandedLegendId == stat.id) ? stat.id : nil
+                } else {
                     highlightId = (highlightId == stat.id) ? nil : stat.id
                 }
-            } label: {
-                legendLabel(stat: stat, dimmed: dimmed, showChevron: false)
             }
-            .buttonStyle(.plain)
+        } label: {
+            legendLabel(stat: stat, dimmed: dimmed, isExpanded: isExpanded, expandable: expandable)
         }
+        .buttonStyle(.plain)
     }
 
-    private func legendLabel(stat: AllotStat, dimmed: Bool, showChevron: Bool) -> some View {
+    private func legendLabel(stat: AllotStat, dimmed: Bool, isExpanded: Bool, expandable: Bool) -> some View {
         let color = Color.tagColor(stat.colorToken)
+        // Others row stays visually identical to non-expandable rows — just an
+        // ordinary line item that happens to expand on tap.
+        let showChevron = expandable && !stat.isOthers
         return HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(color.opacity(dimmed ? 0.25 : 1))
-                .frame(width: 12, height: 12)
+            indicator(stat: stat, color: color, dimmed: dimmed)
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 0) {
@@ -437,18 +559,31 @@ struct AllottedView: View {
                     Text(formatDuration(stat.seconds))
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.textPrimary.opacity(dimmed ? 0.35 : 1))
-                        .frame(width: 68, alignment: .trailing)
+                        .frame(width: 80, alignment: .trailing)
                 }
                 progressBar(color: color, fraction: stat.fraction, dimmed: dimmed)
             }
             if showChevron {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.textTertiary.opacity(0.5))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.textTertiary.opacity(0.6))
+                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                    .animation(.easeInOut(duration: 0.2), value: isExpanded)
             }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 11)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func indicator(stat: AllotStat, color: Color, dimmed: Bool) -> some View {
+        let fade = color.opacity(dimmed ? 0.25 : 1)
+        if mode == .tag {
+            TagDot(color: fade, style: .filled, size: 12)
+        } else {
+            TaskBox(color: fade, style: .filled, size: 12, cornerRadius: 3)
+        }
     }
 
     private func progressBar(color: Color, fraction: Double, dimmed: Bool) -> some View {
@@ -464,10 +599,129 @@ struct AllottedView: View {
         .frame(height: 3)
     }
 
+    // MARK: Inline tag → task breakdown (shared by legend & By-Tag section)
+
+    /// Tasks aggregated under a given stat (real tag, Untagged synthetic, or
+    /// Unbound synthetic). Returns empty if there's nothing to drill into.
+    private func legendBreakdownEntries(for stat: AllotStat) -> [(task: WorkTask, seconds: Int)] {
+        var dict: [UUID: (WorkTask, Int)] = [:]
+        for s in filteredSessions {
+            guard let endAt = s.endAt, let task = s.workTask else { continue }
+            let belongs: Bool
+            if let tag = stat.tag {
+                belongs = task.tag?.id == tag.id
+            } else if stat.id == untaggedStatId {
+                belongs = task.tag == nil || (task.tag?.isSystem ?? false)
+            } else {
+                belongs = false   // Unbound / Others — no per-task drill
+            }
+            guard belongs else { continue }
+            let dur = max(0, Int(endAt.timeIntervalSince(s.startAt)) - s.totalPausedSeconds)
+            guard dur > 0 else { continue }
+            if let ex = dict[task.id] { dict[task.id] = (ex.0, ex.1 + dur) }
+            else { dict[task.id] = (task, dur) }
+        }
+        return dict.values.map { ($0.0, $0.1) }.sorted { $0.1 > $1.1 }
+    }
+
+    @ViewBuilder
+    private func inlineBreakdown(stat: AllotStat) -> some View {
+        // Others row → render the merged source items directly.
+        if stat.isOthers, let kids = stat.othersChildren, !kids.isEmpty {
+            othersChildrenBreakdown(kids)
+        } else {
+            tagTaskBreakdown(for: stat)
+        }
+    }
+
+    @ViewBuilder
+    private func othersChildrenBreakdown(_ kids: [OthersChild]) -> some View {
+        let total = kids.reduce(0) { $0 + $1.seconds }
+        VStack(spacing: 0) {
+            ForEach(kids) { kid in
+                let frac = total > 0 ? Double(kid.seconds) / Double(total) : 0
+                HStack(spacing: 12) {
+                    if kid.isTagItem {
+                        TagDot(color: Color.tagColor(kid.colorToken), style: .filled, size: 10)
+                    } else {
+                        TaskBox(color: Color.tagColor(kid.colorToken), style: .filled, size: 10, cornerRadius: 2.5)
+                    }
+                    Text(kid.name)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.textSecondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(String(format: "%.0f%%", frac * 100))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.textTertiary)
+                        .frame(width: 40, alignment: .trailing)
+                    Text(formatDuration(kid.seconds))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(width: 80, alignment: .trailing)
+                }
+                .padding(.leading, 44)
+                .padding(.trailing, 20)
+                .padding(.vertical, 7)
+            }
+        }
+        .padding(.bottom, 6)
+        .background(Color.textPrimary.opacity(0.025))
+    }
+
+    @ViewBuilder
+    private func tagTaskBreakdown(for stat: AllotStat) -> some View {
+        let entries = legendBreakdownEntries(for: stat)
+        let total = entries.reduce(0) { $0 + $1.seconds }
+        let baseColor = stat.tag.map { Color.tagColor($0.colorToken) } ?? Color.textTertiary
+        if entries.isEmpty {
+            Text("No tasks here yet")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.textTertiary)
+                .padding(.horizontal, 44)
+                .padding(.vertical, 10)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(entries.enumerated()), id: \.element.task.id) { idx, entry in
+                    let frac = total > 0 ? Double(entry.seconds) / Double(total) : 0
+                    let denom = Double(max(1, entries.count - 1))
+                    let opacity = entries.count > 1
+                        ? 0.4 + 0.6 * Double(entries.count - 1 - idx) / denom
+                        : 1.0
+                    HStack(spacing: 12) {
+                        TaskBox(
+                            color: baseColor.opacity(opacity),
+                            style: .filled,
+                            size: 10,
+                            cornerRadius: 2.5
+                        )
+                        Text(entry.task.title)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.textSecondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(String(format: "%.0f%%", frac * 100))
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.textTertiary)
+                            .frame(width: 40, alignment: .trailing)
+                        Text(formatDuration(entry.seconds))
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.textSecondary)
+                            .frame(width: 68, alignment: .trailing)
+                    }
+                    .padding(.leading, 44)
+                    .padding(.trailing, 20)
+                    .padding(.vertical, 7)
+                }
+            }
+            .padding(.bottom, 6)
+            .background(Color.textPrimary.opacity(0.025))
+        }
+    }
+
     // MARK: Tag overview (Task mode supplement)
 
     private var tagOverviewStats: [AllotStat] {
-        // Reuse tag aggregation for the current filtered sessions.
         aggregateByTag(filteredSessions)
     }
 
@@ -481,6 +735,10 @@ struct AllottedView: View {
             VStack(spacing: 0) {
                 ForEach(tagOverviewStats) { stat in
                     tagOverviewRow(stat: stat)
+                    if expandedByTagId == stat.id {
+                        inlineBreakdown(stat: stat)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                     Divider()
                         .padding(.leading, 44)
                         .foregroundStyle(Color.textPrimary.opacity(0.06))
@@ -489,44 +747,47 @@ struct AllottedView: View {
         }
     }
 
+    @ViewBuilder
     private func tagOverviewRow(stat: AllotStat) -> some View {
         let color = Color.tagColor(stat.colorToken)
-        let clickable = stat.tag != nil
-        let content = HStack(spacing: 12) {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
-            Text(stat.name)
-                .font(.system(size: 14))
-                .foregroundStyle(Color.textPrimary)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Text(String(format: "%.0f%%", stat.fraction * 100))
-                .font(.system(size: 13))
-                .foregroundStyle(Color.textSecondary)
-                .frame(width: 40, alignment: .trailing)
-            Text(formatDuration(stat.seconds))
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.textPrimary)
-                .frame(width: 68, alignment: .trailing)
-            if clickable {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.textTertiary.opacity(0.5))
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 11)
+        let expandable = !legendBreakdownEntries(for: stat).isEmpty
+        let isExpanded = expandable && expandedByTagId == stat.id
 
-        return Group {
-            if let tag = stat.tag {
-                NavigationLink {
-                    AllottedDrillView(tag: tag, timeRange: timeRange, sessions: filteredSessions)
-                } label: { content }
-            } else {
-                content
+        Button {
+            guard expandable else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.easeInOut(duration: 0.22)) {
+                expandedByTagId = isExpanded ? nil : stat.id
             }
+        } label: {
+            HStack(spacing: 12) {
+                TagDot(color: color, style: .filled, size: 10)
+                Text(stat.name)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(String(format: "%.0f%%", stat.fraction * 100))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.textSecondary)
+                    .frame(width: 40, alignment: .trailing)
+                Text(formatDuration(stat.seconds))
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.textPrimary)
+                    .frame(width: 68, alignment: .trailing)
+                if expandable {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.textTertiary.opacity(0.6))
+                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     // MARK: Empty state

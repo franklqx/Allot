@@ -120,6 +120,12 @@ struct OncePanelView: View {
                     }
                 }
                 .padding(.top, 20)
+
+                Text("Created \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 16)
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 32)

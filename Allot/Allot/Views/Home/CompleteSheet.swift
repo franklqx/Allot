@@ -2,13 +2,9 @@
 //  CompleteSheet.swift
 //  Allot
 //
-//  Shown when user taps the ○ / ☐ icon on a task row.
-//  Two paths depending on whether the task already has worked seconds:
-//    A. workedSeconds > 0 → "You spent X on [title]. Is this right?" [Confirm] [Adjust]
-//    B. workedSeconds == 0 → chip picker (15 / 30 / 45 / 60 / Custom / Don't log)
-//
-//  Writing the duration creates a manual QuickLog-style TimeSession;
-//  confirmation marks the task completed on the given date.
+//  Shown when user taps the icon on a task row.
+//    A. workedSeconds > 0 → show logged time, confirm or adjust.
+//    B. workedSeconds == 0 → quick-pick chips (15/25/30/45/60/90) + custom + skip.
 
 import SwiftUI
 import SwiftData
@@ -27,30 +23,9 @@ struct CompleteSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GrabberView()
-                .padding(.top, 8)
-
-            // Title
-            VStack(spacing: 6) {
-                Text(task.title)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color.textPrimary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-
-                if let tag = task.tag, !tag.isSystem {
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(Color.tagColor(tag.colorToken))
-                            .frame(width: 6, height: 6)
-                        Text(tag.name)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.textSecondary)
-                    }
-                }
-            }
-            .padding(.top, 8)
-            .padding(.horizontal, 24)
+            header
+                .padding(.top, 20)
+                .padding(.horizontal, 20)
 
             if existing > 0 {
                 confirmExistingBody
@@ -58,40 +33,61 @@ struct CompleteSheet: View {
                 quickPickBody
             }
         }
+        .frame(maxWidth: .infinity, alignment: .top)
         .background(Color.bgElevated)
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            if let tag = task.tag, !tag.isSystem {
+                TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 10)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     // MARK: Path A — confirm existing time
 
     private var confirmExistingBody: some View {
         VStack(spacing: 0) {
-            Text("You logged")
-                .font(.system(size: 13))
-                .foregroundStyle(Color.textSecondary)
-                .padding(.top, 24)
+            VStack(spacing: 4) {
+                Text("Logged today")
+                    .font(.system(size: 12, weight: .medium))
+                    .kerning(0.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.textTertiary)
 
-            Text(formatDuration(existing))
-                .font(.system(size: 44, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.textPrimary)
-                .padding(.top, 4)
-
-            Text("on this task today — keep it?")
-                .font(.system(size: 14))
-                .foregroundStyle(Color.textTertiary)
-                .padding(.top, 8)
-
-            VStack(spacing: 10) {
-                PrimaryButton(title: "Confirm & mark done") {
-                    markCompleted()
-                }
-
-                GhostButton(title: "Adjust time") {
-                    showCustom = true
-                }
+                Text(formatDuration(existing))
+                    .font(.system(size: 44, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.textPrimary)
             }
-            .padding(.top, 28)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
             .padding(.horizontal, 20)
-            .padding(.bottom, 20)
+            .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.lg))
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+
+            VStack(spacing: 8) {
+                PrimaryButton(title: "Confirm & mark done") { markCompleted() }
+                GhostButton(title: "Adjust time")          { showCustom = true }
+            }
+            .padding(.top, 14)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 18)
         }
         .sheet(isPresented: $showCustom) {
             CustomMinutesSheet(initial: max(1, existing / 60)) { minutes in
@@ -104,14 +100,21 @@ struct CompleteSheet: View {
     // MARK: Path B — quick pick
 
     private var quickPickBody: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 0) {
             Text("How long did you spend?")
-                .font(.system(size: 14))
-                .foregroundStyle(Color.textSecondary)
-                .padding(.top, 24)
+                .font(.system(size: 12, weight: .medium))
+                .kerning(0.5)
+                .textCase(.uppercase)
+                .foregroundStyle(Color.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
 
-            // Chip grid
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            LazyVGrid(
+                columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())],
+                spacing: 8
+            ) {
                 ForEach([15, 25, 30, 45, 60, 90], id: \.self) { m in
                     DurationChip(minutes: m) {
                         logManual(seconds: m * 60, replacing: false)
@@ -120,14 +123,13 @@ struct CompleteSheet: View {
             }
             .padding(.horizontal, 20)
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 GhostButton(title: "Custom…") { showCustom = true }
-                GhostButton(title: "Don't log time") {
-                    markCompletedOnly()
-                }
+                GhostButton(title: "Skip log") { markCompletedOnly() }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 20)
+            .padding(.top, 10)
+            .padding(.bottom, 18)
         }
         .sheet(isPresented: $showCustom) {
             CustomMinutesSheet(initial: 30) { minutes in
@@ -150,6 +152,7 @@ struct CompleteSheet: View {
         try? modelContext.save()
         dismiss()
     }
+
 
     private func logManual(seconds: Int, replacing: Bool) {
         let cal = Calendar.current
@@ -183,7 +186,7 @@ private struct DurationChip: View {
     var body: some View {
         Button(action: onTap) {
             Text("\(minutes)m")
-                .font(.system(size: 16, weight: .medium, design: .monospaced))
+                .font(.system(size: 16, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Color.textPrimary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
@@ -210,12 +213,10 @@ private struct CustomMinutesSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GrabberView().padding(.top, 8)
-
             Text("Custom duration")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Color.textPrimary)
-                .padding(.top, 16)
+                .padding(.top, 24)
 
             Picker("", selection: $minutes) {
                 ForEach(1...600, id: \.self) { m in
@@ -230,7 +231,7 @@ private struct CustomMinutesSheet: View {
                 dismiss()
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 20)
+            .padding(.bottom, 24)
         }
         .background(Color.bgElevated)
     }
@@ -248,7 +249,7 @@ struct PrimaryButton: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Color.bgPrimary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 50)
+                .frame(height: 52)
                 .background(Color.textPrimary, in: RoundedRectangle(cornerRadius: Radius.md))
         }
         .buttonStyle(.plain)
@@ -265,7 +266,7 @@ struct GhostButton: View {
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Color.textPrimary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 44)
+                .frame(height: 46)
                 .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
         }
         .buttonStyle(.plain)

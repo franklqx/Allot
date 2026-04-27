@@ -14,27 +14,29 @@ struct NewTaskView: View {
     /// Pre-filled date (from the selected Home date when FAB is tapped).
     let prefilledDate: Date
 
+    /// When non-nil, the form edits this task instead of creating a new one.
+    let editingTask: WorkTask?
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss)      private var dismiss
 
     // MARK: State
 
     private enum TaskTab { case task, recurring }
-    @State private var activeTab: TaskTab = .task
-    @State private var title = ""
-    @FocusState private var titleFocused: Bool
+    @State private var activeTab: TaskTab
+    @State private var title: String
 
     // Shared fields
-    @State private var selectedTag: Tag? = nil
-    @State private var timerMode: TimerMode = .stopwatch
-    @State private var startTimeMinutes: Int? = nil    // nil = no time set
-    @State private var countdownMinutes: Int = 25
+    @State private var selectedTag: Tag?
+    @State private var timerMode: TimerMode
+    @State private var startTimeMinutes: Int?
+    @State private var countdownMinutes: Int
 
     // Once-task fields
     @State private var scheduledDate: Date
 
     // Recurring fields
-    @State private var repeatRule: RepeatRule = .everyDay
+    @State private var repeatRule: RepeatRule
 
     // Sheet presentations
     @State private var showDatePicker    = false
@@ -43,41 +45,53 @@ struct NewTaskView: View {
     @State private var showTagPicker     = false
     @State private var showRepeatPicker  = false
 
-    init(prefilledDate: Date = Date()) {
+    init(prefilledDate: Date = Date(), editingTask: WorkTask? = nil) {
         self.prefilledDate = prefilledDate
-        _scheduledDate = State(initialValue: prefilledDate)
+        self.editingTask = editingTask
+
+        if let t = editingTask {
+            _activeTab          = State(initialValue: t.type == .recurring ? .recurring : .task)
+            _title              = State(initialValue: t.title)
+            _selectedTag        = State(initialValue: t.tag?.isSystem == true ? nil : t.tag)
+            _timerMode          = State(initialValue: t.timerMode)
+            _startTimeMinutes   = State(initialValue: t.startTime)
+            _countdownMinutes   = State(initialValue: max(1, t.countdownDuration / 60))
+            _scheduledDate      = State(initialValue: t.scheduledDate ?? prefilledDate)
+            _repeatRule         = State(initialValue: t.repeatRule ?? .everyDay)
+        } else {
+            _activeTab          = State(initialValue: .task)
+            _title              = State(initialValue: "")
+            _selectedTag        = State(initialValue: nil)
+            _timerMode          = State(initialValue: .stopwatch)
+            _startTimeMinutes   = State(initialValue: nil)
+            _countdownMinutes   = State(initialValue: 25)
+            _scheduledDate      = State(initialValue: prefilledDate)
+            _repeatRule         = State(initialValue: .everyDay)
+        }
     }
 
     // MARK: Body
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            tabBar
+                .padding(.top, 12)
+
+            // Title input — fills remaining space
+            titleField
+
+            Spacer(minLength: 16)
+
             VStack(spacing: 0) {
-                tabBar
+                pillRow
+                    .padding(.bottom, 16)
 
-                Divider()
-                    .foregroundStyle(Color.textPrimary.opacity(0.06))
-
-                // Title input — fills remaining space
-                titleField
-
-                Spacer(minLength: 16)
-
-                VStack(spacing: 0) {
-                    pillRow
-                        .padding(.bottom, 16)
-
-                    addButton
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 8)
-                }
+                addButton
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
             }
-            .background(Color.bgPrimary)
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { closeButton }
         }
-        .onAppear { titleFocused = true }
+        .background(Color.bgPrimary)
         // Sheets
         .sheet(isPresented: $showDatePicker) {
             NavigationStack {
@@ -97,17 +111,16 @@ struct NewTaskView: View {
             .presentationDetents([.medium])
         }
         .sheet(isPresented: $showTimePicker) {
-            HorizontalSliderView(
-                mode: .timeOfDay,
+            WheelTimePickerSheet(
                 title: "Start time",
-                valueMinutes: Binding(
+                minutes: Binding(
                     get: { startTimeMinutes ?? 9 * 60 },
                     set: { startTimeMinutes = $0 }
                 ),
                 onDismiss: { showTimePicker = false }
             )
-            .presentationDetents([.height(260)])
-            .presentationBackground(Color.black)
+            .presentationDetents([.height(280)])
+            .presentationBackground(Color.bgElevated)
         }
         .sheet(isPresented: $showDurationPicker) {
             HorizontalSliderView(
@@ -127,54 +140,57 @@ struct NewTaskView: View {
         }
     }
 
-    // MARK: Tab bar
+    // MARK: Tab bar — pill segmented buttons (white-with-shadow when active)
 
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach([TaskTab.recurring, TaskTab.task], id: \.self) { tab in
+        HStack(spacing: 6) {
+            ForEach([TaskTab.task, TaskTab.recurring], id: \.self) { tab in
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) { activeTab = tab }
                 } label: {
                     Text(tab == .task ? "Task" : "Recurring")
-                        .font(.system(size: 15, weight: activeTab == tab ? .semibold : .regular))
+                        .font(.system(size: 14, weight: activeTab == tab ? .semibold : .regular))
                         .foregroundStyle(activeTab == tab ? Color.textPrimary : Color.textTertiary)
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 18)
+                        .background(
+                            ZStack {
+                                if activeTab == tab {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color.bgElevated)
+                                        .shadow(color: Color.black.opacity(0.08),
+                                                radius: 4, x: 0, y: 1)
+                                }
+                            }
+                        )
                 }
                 .buttonStyle(.plain)
+                .disabled(editingTask != nil)
             }
         }
-        .overlay(alignment: .bottom) {
-            // Sliding underline
-            GeometryReader { geo in
-                let tabWidth = geo.size.width / 2
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color.accentPrimary)
-                    .frame(width: 28, height: 3)
-                    .offset(x: activeTab == .recurring
-                            ? tabWidth / 2 - 14
-                            : tabWidth * 1.5 - 14)
-                    .animation(.easeInOut(duration: 0.15), value: activeTab)
-            }
-            .frame(height: 3)
-        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.bgSecondary)
+        )
+        .padding(.horizontal, 20)
     }
 
     // MARK: Title field
 
     private var titleField: some View {
-        TextField(
-            activeTab == .task ? "Task title" : "Habit title",
+        AutoFocusTextField(
             text: $title,
-            axis: .vertical
+            placeholder: titleFieldPlaceholder,
+            font: UIFont.systemFont(ofSize: 28, weight: .medium)
         )
-        .font(.system(size: 28, weight: .medium))
-        .foregroundStyle(Color.textPrimary)
-        .focused($titleFocused)
-        .submitLabel(.done)
+        .frame(height: 44)
         .padding(.horizontal, 20)
-        .padding(.top, 24)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.top, 16)
+    }
+
+    private var titleFieldPlaceholder: String {
+        activeTab == .task ? "Task title" : "Habit title"
     }
 
     // MARK: Pill row
@@ -183,14 +199,12 @@ struct NewTaskView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 if activeTab == .task {
-                    // Date pill
                     PillButton(
                         label: scheduledDate.formatted(.dateTime.month(.abbreviated).day()),
                         systemImage: "calendar",
                         action: { showDatePicker = true }
                     )
                 } else {
-                    // Repeat rule pill
                     PillButton(
                         label: repeatRule.displayName,
                         systemImage: "arrow.clockwise",
@@ -244,7 +258,7 @@ struct NewTaskView: View {
 
     private var addButton: some View {
         Button(action: saveTask) {
-            Text("Add")
+            Text(editingTask == nil ? "Add" : "Save")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -260,42 +274,174 @@ struct NewTaskView: View {
         .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
-    // MARK: Close button
-
-    private var closeButton: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.textSecondary)
-                    .padding(8)
-                    .background(Color.bgSecondary, in: Circle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
     // MARK: Save
 
     private func saveTask() {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
 
-        let task = WorkTask(
-            title: trimmed,
-            type: activeTab == .task ? .once : .recurring,
-            timerMode: timerMode,
-            countdownDuration: countdownMinutes * 60,
-            scheduledDate: activeTab == .task ? scheduledDate : nil,
-            startTime: startTimeMinutes,
-            repeatRule: activeTab == .recurring ? repeatRule : nil,
-            tag: selectedTag
-        )
-        modelContext.insert(task)
+        let resolvedType: TaskType = activeTab == .task ? .once : .recurring
+
+        if let task = editingTask {
+            task.title = trimmed
+            task.timerMode = timerMode
+            task.countdownDuration = countdownMinutes * 60
+            task.scheduledDate = activeTab == .task ? scheduledDate : nil
+            task.startTime = startTimeMinutes
+            task.repeatRule = activeTab == .recurring ? repeatRule : nil
+            task.tag = selectedTag
+        } else {
+            let task = WorkTask(
+                title: trimmed,
+                type: resolvedType,
+                timerMode: timerMode,
+                countdownDuration: countdownMinutes * 60,
+                scheduledDate: activeTab == .task ? scheduledDate : nil,
+                startTime: startTimeMinutes,
+                repeatRule: activeTab == .recurring ? repeatRule : nil,
+                tag: selectedTag
+            )
+            modelContext.insert(task)
+        }
         try? modelContext.save()
         dismiss()
+    }
+}
+
+// MARK: Wheel time picker sheet
+
+private struct WheelTimePickerSheet: View {
+    let title: String
+    @Binding var minutes: Int
+    let onDismiss: () -> Void
+
+    @State private var pickerDate: Date = Date()
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("Cancel") { onDismiss() }
+                    .foregroundStyle(Color.textSecondary)
+                Spacer()
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                Button("Done") {
+                    let cal = Calendar.current
+                    let comps = cal.dateComponents([.hour, .minute], from: pickerDate)
+                    minutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+                    onDismiss()
+                }
+                .foregroundStyle(Color.accentPrimary)
+                .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+
+            DatePicker(
+                "",
+                selection: $pickerDate,
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            .padding(.bottom, 12)
+        }
+        .background(Color.bgElevated)
+        .onAppear {
+            let cal = Calendar.current
+            let h = minutes / 60
+            let m = minutes % 60
+            pickerDate = cal.date(bySettingHour: h, minute: m, second: 0, of: Date()) ?? Date()
+        }
+    }
+}
+
+// MARK: Auto-focus text field
+//
+// Goal: keyboard should rise *together with* the sheet, not lag 0.4s behind.
+//
+// The reliable hook is UIViewController's `viewIsAppearing(_:)` (iOS 13+):
+// it fires after `viewWillAppear` and `viewWillLayoutSubviews` but BEFORE
+// `viewDidAppear` — i.e. while the sheet's transition animation is still
+// running, with the view already in the window hierarchy. This is exactly
+// the right moment to claim first responder so iOS coalesces the keyboard
+// animation with the sheet animation.
+//
+// We also have a `viewDidAppear` fallback in case the first attempt fails
+// for any reason (rare but recoverable instead of silently broken).
+
+private final class AutoFocusVC: UIViewController, UITextFieldDelegate {
+    let textField = UITextField()
+    private var hasAutoFocused = false
+    var onTextChange: ((String) -> Void)?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(textField)
+        NSLayoutConstraint.activate([
+            textField.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            textField.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            textField.topAnchor.constraint(equalTo: view.topAnchor),
+            textField.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        textField.delegate = self
+        textField.returnKeyType = .done
+        textField.contentVerticalAlignment = .top
+        textField.addTarget(self, action: #selector(editingChanged(_:)), for: .editingChanged)
+    }
+
+    override func viewIsAppearing(_ animated: Bool) {
+        super.viewIsAppearing(animated)
+        guard !hasAutoFocused else { return }
+        if textField.becomeFirstResponder() {
+            hasAutoFocused = true
+        }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if !hasAutoFocused {
+            hasAutoFocused = textField.becomeFirstResponder()
+        }
+    }
+
+    @objc private func editingChanged(_ tf: UITextField) {
+        onTextChange?(tf.text ?? "")
+    }
+
+    func textFieldShouldReturn(_ tf: UITextField) -> Bool {
+        tf.resignFirstResponder()
+        return true
+    }
+}
+
+private struct AutoFocusTextField: UIViewControllerRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let font: UIFont
+
+    func makeUIViewController(context: Context) -> AutoFocusVC {
+        let vc = AutoFocusVC()
+        vc.textField.placeholder = placeholder
+        vc.textField.font = font
+        vc.textField.text = text
+        vc.onTextChange = { newValue in
+            if newValue != text { text = newValue }
+        }
+        return vc
+    }
+
+    func updateUIViewController(_ vc: AutoFocusVC, context: Context) {
+        if vc.textField.text != text { vc.textField.text = text }
+        vc.onTextChange = { newValue in
+            if newValue != text { text = newValue }
+        }
     }
 }
 

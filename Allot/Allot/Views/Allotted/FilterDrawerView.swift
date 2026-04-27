@@ -9,6 +9,7 @@ import SwiftData
 
 struct FilterDrawerView: View {
 
+    @Binding var mode:           AllotMode
     @Binding var hiddenTagIds:   Set<UUID>
     @Binding var taskTypeFilter: TaskType?
 
@@ -22,6 +23,16 @@ struct FilterDrawerView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section("View") {
+                    Picker("Mode", selection: $mode) {
+                        ForEach(AllotMode.allCases, id: \.self) { m in
+                            Text(m.rawValue).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .listRowBackground(Color.bgElevated)
+
                 Section("Task Type") {
                     typeRow(label: "All types",  value: nil)
                     typeRow(label: "One-time",   value: .once)
@@ -89,9 +100,7 @@ struct FilterDrawerView: View {
             }
         } label: {
             HStack(spacing: 12) {
-                Circle()
-                    .fill(Color.tagColor(tag.colorToken))
-                    .frame(width: 10, height: 10)
+                TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 10)
                 Text(tag.name)
                     .foregroundStyle(Color.textPrimary)
                 Spacer()

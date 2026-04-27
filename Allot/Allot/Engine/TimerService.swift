@@ -33,6 +33,18 @@ struct ActiveSessionSentinel: Codable {
     private(set) var elapsedSeconds = 0
     /// The SwiftData session currently being recorded.
     private(set) var activeSession: TimeSession?
+    /// When set, the session is a countdown of this many seconds.
+    /// `displaySeconds` then returns the remaining time instead of the elapsed.
+    private(set) var countdownTarget: Int?
+
+    /// What the running UI should show. Counts up for stopwatch, counts down
+    /// for countdown sessions (clamped at 0).
+    var displaySeconds: Int {
+        if let target = countdownTarget {
+            return max(0, target - elapsedSeconds)
+        }
+        return elapsedSeconds
+    }
 
     // MARK: Private
 
@@ -44,7 +56,7 @@ struct ActiveSessionSentinel: Codable {
 
     // MARK: Controls
 
-    func start(task: WorkTask, in context: ModelContext) {
+    func start(task: WorkTask, countdownSeconds: Int? = nil, in context: ModelContext) {
         guard !isRunning else { return }
 
         let now = Date()
@@ -56,6 +68,7 @@ struct ActiveSessionSentinel: Codable {
         elapsedSeconds = 0
         accumulatedPausedSeconds = 0
         pauseStart = nil
+        countdownTarget = countdownSeconds
         isRunning = true
         isPaused = false
 
@@ -63,7 +76,7 @@ struct ActiveSessionSentinel: Codable {
         startTicker()
     }
 
-    func startUnbound(in context: ModelContext) {
+    func startUnbound(countdownSeconds: Int? = nil, in context: ModelContext) {
         guard !isRunning else { return }
 
         let now = Date()
@@ -75,6 +88,7 @@ struct ActiveSessionSentinel: Codable {
         elapsedSeconds = 0
         accumulatedPausedSeconds = 0
         pauseStart = nil
+        countdownTarget = countdownSeconds
         isRunning = true
         isPaused = false
 
@@ -188,6 +202,7 @@ struct ActiveSessionSentinel: Codable {
         activeSession = nil
         accumulatedPausedSeconds = 0
         pauseStart = nil
+        countdownTarget = nil
     }
 
     private func writeSentinel(taskId: UUID, taskTitle: String, startAt: Date) {

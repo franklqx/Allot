@@ -87,9 +87,7 @@ struct AllottedDrillView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(taskStats) { stat in
                             taskRow(stat: stat)
-                            Divider()
-                                .padding(.leading, 20)
-                                .foregroundStyle(Color.textPrimary.opacity(0.06))
+                            DottedDivider()
                         }
                     }
                     .padding(.bottom, 100)

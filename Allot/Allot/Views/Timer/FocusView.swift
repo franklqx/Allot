@@ -2,8 +2,10 @@
 //  FocusView.swift
 //  Allot
 //
-//  Full-screen immersive focus mode. Triggered by dragging the timer panel further down.
-//  ✕ exits back to quarter panel (timer keeps running). Stop ends the session.
+//  Full-screen immersive focus mode. Small chevron-down at top-left exits back
+//  to the Focus tab (timer keeps running). Pause + Stop circle buttons at the
+//  bottom; stopping ends the session and dismisses on confirmation.
+//
 
 import SwiftUI
 import SwiftData
@@ -14,57 +16,42 @@ struct FocusView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var stoppedSession: TimeSession?
+    @State private var unboundSession: TimeSession?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Top bar
                 HStack {
                     Button {
-                        dismiss()  // back to quarter panel, timer keeps running
+                        dismiss()
                     } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.7))
-                            .padding(12)
-                            .background(.white.opacity(0.12), in: Circle())
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
 
                     Spacer()
-
-                    Button {
-                        stopTimer()
-                    } label: {
-                        Text("Stop")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Color.accentPrimary)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Color.accentPrimary.opacity(0.15), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
 
                 Spacer()
 
-                // Huge clock
-                Text(formatClock(timerService.elapsedSeconds))
-                    .font(.system(size: 80, weight: .semibold, design: .monospaced))
+                Text(formatClock(timerService.displaySeconds))
+                    .font(.system(size: 92, weight: .light))
+                    .monospacedDigit()
                     .foregroundStyle(.white)
-                    .animation(nil, value: timerService.elapsedSeconds)
+                    .animation(nil, value: timerService.displaySeconds)
 
-                // Task name
                 if let task = timerService.activeSession?.workTask {
                     HStack(spacing: 6) {
-                        if let tag = task.tag {
-                            Circle()
-                                .fill(Color.tagColor(tag.colorToken))
-                                .frame(width: 8, height: 8)
+                        if let tag = task.tag, !tag.isSystem {
+                            TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 8)
                         }
                         Text(task.title)
                             .font(.system(size: 17, weight: .medium))
@@ -73,24 +60,28 @@ struct FocusView: View {
                     .padding(.top, 16)
                 } else {
                     Text("Unbound session")
-                        .font(.system(size: 17))
+                        .font(.system(size: 15))
                         .foregroundStyle(.white.opacity(0.45))
                         .padding(.top, 16)
                 }
 
                 Spacer()
 
-                // Pause button
-                Button {
-                    timerService.isPaused ? timerService.resume() : timerService.pause()
-                } label: {
-                    Image(systemName: timerService.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.white)
-                        .frame(width: 72, height: 72)
-                        .background(.white.opacity(0.12), in: Circle())
+                HStack(spacing: 28) {
+                    DarkCircleButton(
+                        systemImage: timerService.isPaused ? "play.fill" : "pause.fill",
+                        label: timerService.isPaused ? "Resume" : "Pause"
+                    ) {
+                        timerService.isPaused ? timerService.resume() : timerService.pause()
+                    }
+                    DarkCircleButton(
+                        systemImage: "stop.fill",
+                        label: "Stop",
+                        isDestructive: true
+                    ) {
+                        stopTimer()
+                    }
                 }
-                .buttonStyle(.plain)
                 .padding(.bottom, 60)
             }
         }
@@ -100,8 +91,16 @@ struct FocusView: View {
                 dismiss()
             }
         }
+        .sheet(item: $unboundSession) { session in
+            UnboundSessionAttachSheet(session: session) {
+                unboundSession = nil
+                dismiss()
+            }
+            .presentationDetents([.large])
+            .presentationBackground(Color.bgElevated)
+        }
         .onAppear {
-            UIApplication.shared.isIdleTimerDisabled = true  // keep screen on in focus mode
+            UIApplication.shared.isIdleTimerDisabled = true
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
@@ -110,13 +109,40 @@ struct FocusView: View {
 
     private func stopTimer() {
         timerService.stop(in: modelContext)
-        // Get the most recent session for the confirm sheet
-        // (TimerService sets endAt before clearing activeSession)
-        // We snapshot it before stop clears state by reading the result
-        // Re-fetch latest session via a quick query
         let descriptor = FetchDescriptor<TimeSession>(
             sortBy: [SortDescriptor(\.startAt, order: .reverse)]
         )
-        stoppedSession = try? modelContext.fetch(descriptor).first
+        guard let session = try? modelContext.fetch(descriptor).first else { return }
+        if session.workTask == nil {
+            unboundSession = session
+        } else {
+            stoppedSession = session
+        }
+    }
+}
+
+private struct DarkCircleButton: View {
+    let systemImage: String
+    let label: String
+    var isDestructive: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(isDestructive ? Color.stateDestructive : .white)
+                    .frame(width: 72, height: 72)
+                    .background(
+                        (isDestructive ? Color.stateDestructive : Color.white).opacity(0.14),
+                        in: Circle()
+                    )
+                Text(label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+        }
+        .buttonStyle(.plain)
     }
 }

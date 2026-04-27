@@ -2,10 +2,11 @@
 //  FocusTabView.swift
 //  Allot
 //
-//  Dedicated Focus tab (replaces the old pull-down TimerPanelView).
-//  Idle: mode picker + task list + Start button.
-//  Running: large breathing clock + task + Pause / Stop.
-//  Top-right ⛶ opens the full-screen immersive FocusView.
+//  Idle: mode picker + circular Start button + task list.
+//  Running: large breathing clock + Pause / Stop.
+//  Top-right toolbar opens FocusHistoryView.
+//  Starting the timer auto-presents the immersive FocusView (full-screen).
+//
 
 import SwiftUI
 import SwiftData
@@ -21,7 +22,12 @@ struct FocusTabView: View {
     @State private var selectedTaskID: UUID? = nil
     @State private var showImmersive = false
     @State private var stoppedSession: TimeSession?
-    @State private var breathe = false
+    @State private var unboundSession: TimeSession?
+    @State private var showHistory = false
+    /// Last session id the user explicitly dismissed from the immersive view.
+    /// Prevents re-entering the Focus tab from auto-presenting full-screen
+    /// again for the same running session.
+    @State private var dismissedSessionId: UUID? = nil
 
     private let presets: [(String, Int?)] = [
         ("Stopwatch", nil),
@@ -36,8 +42,10 @@ struct FocusTabView: View {
     private var todayTasks: [WorkTask] {
         let today = Date()
         return allTasks
+            .filter { $0.archivedAt == nil }
             .filter { $0.isScheduled(on: today) && !$0.isCompleted(on: today) }
             .sorted {
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
                 switch ($0.startTime, $1.startTime) {
                 case (let a?, let b?): return a < b
                 case (nil, nil):       return $0.createdAt < $1.createdAt
@@ -61,17 +69,40 @@ struct FocusTabView: View {
                 }
             }
             .navigationTitle("Focus")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showImmersive = true
+                        showHistory = true
                     } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        Image(systemName: "clock.arrow.circlepath")
                             .foregroundStyle(Color.textSecondary)
                     }
-                    .disabled(!timerService.isRunning)
-                    .opacity(timerService.isRunning ? 1 : 0.3)
+                }
+            }
+            .navigationDestination(isPresented: $showHistory) {
+                FocusHistoryView()
+            }
+            .onAppear {
+                // Auto-present full-screen when entering the Focus tab WITH a
+                // running session — but only if the user hasn't already
+                // dismissed full-screen for this same session.
+                if let id = timerService.activeSession?.id,
+                   dismissedSessionId != id,
+                   !showImmersive {
+                    showImmersive = true
+                }
+            }
+            .onChange(of: timerService.isRunning) { wasRunning, isRunning in
+                if !wasRunning && isRunning && !showImmersive {
+                    showImmersive = true
+                }
+            }
+            .onChange(of: showImmersive) { _, isShowing in
+                // Capture which session the user just dismissed so re-entering
+                // the tab doesn't reopen it.
+                if !isShowing, let id = timerService.activeSession?.id {
+                    dismissedSessionId = id
                 }
             }
         }
@@ -81,15 +112,19 @@ struct FocusTabView: View {
         .sheet(item: $stoppedSession) { session in
             StopConfirmView(session: session) { stoppedSession = nil }
         }
+        .sheet(item: $unboundSession) { session in
+            UnboundSessionAttachSheet(session: session) { unboundSession = nil }
+                .presentationDetents([.large])
+                .presentationBackground(Color.bgElevated)
+        }
     }
 
     // MARK: Idle view
 
     private var idleView: some View {
         VStack(spacing: 0) {
-            Spacer().frame(height: 24)
+            Spacer().frame(height: 8)
 
-            // Mode clock paged swipe
             TabView(selection: $modeIndex) {
                 ForEach(Array(presets.enumerated()), id: \.offset) { index, preset in
                     modeClockPage(label: preset.0, minutes: preset.1)
@@ -102,7 +137,6 @@ struct FocusTabView: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
 
-            // Page dots
             HStack(spacing: 6) {
                 ForEach(0..<presets.count, id: \.self) { i in
                     Circle()
@@ -111,25 +145,12 @@ struct FocusTabView: View {
                         .animation(.easeInOut(duration: 0.15), value: modeIndex)
                 }
             }
-            .padding(.bottom, 24)
+            .padding(.bottom, 20)
 
-            // Task list
+            startButton
+                .padding(.bottom, 24)
+
             taskPickerList
-
-            Spacer()
-
-            // Start button
-            Button(action: startTimer) {
-                Text(selectedTaskID == nil ? "Start without task" : "Start")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.bgPrimary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(Color.textPrimary, in: RoundedRectangle(cornerRadius: Radius.md))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 120)  // clear tab bar
         }
     }
 
@@ -142,11 +163,26 @@ struct FocusTabView: View {
                 .tracking(0.5)
 
             Text(minutes.map { String(format: "%02d:00", $0 % 60 == 0 && $0 >= 60 ? $0 / 60 : $0) } ?? "00:00")
-                .font(.system(size: 88, weight: .thin, design: .monospaced))
+                .font(.system(size: 88, weight: .thin))
                 .foregroundStyle(Color.textPrimary)
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
         }
+    }
+
+    private var startButton: some View {
+        Button(action: startTimer) {
+            ZStack {
+                Circle()
+                    .fill(Color.textPrimary)
+                    .frame(width: 76, height: 76)
+                Image(systemName: "play.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(Color.bgPrimary)
+                    .offset(x: 2)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private var taskPickerList: some View {
@@ -172,13 +208,11 @@ struct FocusTabView: View {
                                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             }
                         )
-                        Divider()
-                            .padding(.leading, 44)
-                            .foregroundStyle(Color.textPrimary.opacity(0.06))
+                        DottedDivider()
                     }
+                    Color.clear.frame(height: 100)   // tab-bar inset
                 }
             }
-            .frame(maxHeight: 260)
         }
     }
 
@@ -188,26 +222,18 @@ struct FocusTabView: View {
         VStack(spacing: 0) {
             Spacer()
 
-            Text(formatClock(timerService.elapsedSeconds))
-                .font(.system(size: 88, weight: .semibold, design: .monospaced))
+            Text(formatClock(timerService.displaySeconds))
+                .font(.system(size: 88, weight: .light))
+                .monospacedDigit()
                 .foregroundStyle(Color.textPrimary)
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
-                .animation(nil, value: timerService.elapsedSeconds)
-                .scaleEffect(breathe ? 1.01 : 1.0)
-                .onAppear {
-                    withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
-                        breathe = true
-                    }
-                }
-                .onDisappear { breathe = false }
+                .animation(nil, value: timerService.displaySeconds)
 
             if let task = timerService.activeSession?.workTask {
                 HStack(spacing: 6) {
                     if let tag = task.tag, !tag.isSystem {
-                        Circle()
-                            .fill(Color.tagColor(tag.colorToken))
-                            .frame(width: 8, height: 8)
+                        TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 8)
                     }
                     Text(task.title)
                         .font(.system(size: 17, weight: .medium))
@@ -247,20 +273,22 @@ struct FocusTabView: View {
     private func startTimer() {
         guard !timerService.isRunning else { return }
         let preset = presets[modeIndex]
+        let countdownSeconds = preset.1.map { $0 * 60 }
         let task = todayTasks.first(where: { $0.id == selectedTaskID })
 
         if let task = task {
-            if let minutes = preset.1 {
+            if let cs = countdownSeconds {
                 task.timerMode = .countdown
-                task.countdownDuration = minutes * 60
+                task.countdownDuration = cs
             } else {
                 task.timerMode = .stopwatch
             }
-            timerService.start(task: task, in: modelContext)
+            timerService.start(task: task, countdownSeconds: countdownSeconds, in: modelContext)
         } else {
-            timerService.startUnbound(in: modelContext)
+            timerService.startUnbound(countdownSeconds: countdownSeconds, in: modelContext)
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        showImmersive = true
     }
 
     private func stopTimer() {
@@ -268,7 +296,12 @@ struct FocusTabView: View {
         let descriptor = FetchDescriptor<TimeSession>(
             sortBy: [SortDescriptor(\.startAt, order: .reverse)]
         )
-        stoppedSession = try? modelContext.fetch(descriptor).first
+        guard let session = try? modelContext.fetch(descriptor).first else { return }
+        if session.workTask == nil {
+            unboundSession = session
+        } else {
+            stoppedSession = session
+        }
     }
 }
 
@@ -283,13 +316,9 @@ private struct TaskPickRow: View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 if let tag = task.tag, !tag.isSystem {
-                    Circle()
-                        .fill(Color.tagColor(tag.colorToken))
-                        .frame(width: 8, height: 8)
+                    TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 8)
                 } else {
-                    Circle()
-                        .fill(Color.textTertiary)
-                        .frame(width: 8, height: 8)
+                    TagDot(color: Color.textTertiary, style: .filled, size: 8)
                 }
 
                 Text(task.title)
@@ -316,7 +345,7 @@ private struct TaskPickRow: View {
 
 // MARK: Circle control button
 
-private struct FocusCircleButton: View {
+struct FocusCircleButton: View {
     let systemImage: String
     let label: String
     var isDestructive: Bool = false

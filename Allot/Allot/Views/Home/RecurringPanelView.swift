@@ -71,7 +71,7 @@ struct RecurringPanelView: View {
                     .buttonStyle(.plain)
                     .padding(.top, 16)
 
-                    // Edit + Remove
+                    // Edit · Pause · Remove
                     HStack(spacing: 8) {
                         Button {
                             dismiss()
@@ -83,6 +83,18 @@ struct RecurringPanelView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                                 .background(Color.bgSecondary, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            archiveTask()
+                        } label: {
+                            Label("Hide", systemImage: "eye.slash")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Color.textTertiary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.bgSecondary.opacity(0.6), in: Capsule())
                         }
                         .buttonStyle(.plain)
 
@@ -122,6 +134,12 @@ struct RecurringPanelView: View {
                     // Statistics detail
                     StatisticsSection(task: task)
 
+                    Text("Created \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 24)
+
                     Spacer(minLength: 40)
                 }
                 .padding(.horizontal, 24)
@@ -139,6 +157,13 @@ struct RecurringPanelView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    private func archiveTask() {
+        task.archivedAt = Date()
+        try? modelContext.save()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        dismiss()
     }
 
     private var shareWithinTagLabel: String {

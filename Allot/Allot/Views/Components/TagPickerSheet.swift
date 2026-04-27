@@ -10,29 +10,46 @@ struct TagPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Tag.createdAt) private var tags: [Tag]
 
+    @State private var showCreate = false
+
     var body: some View {
         NavigationStack {
             List {
                 // Untagged option
                 ForEach(tags.filter { $0.isSystem }) { tag in
-                    TagRow(tag: tag, isSelected: selectedTag == nil || selectedTag?.id == tag.id)
-                        .onTapGesture {
-                            selectedTag = tag.isSystem ? nil : tag
-                            dismiss()
-                        }
+                    Button {
+                        selectedTag = nil
+                        dismiss()
+                    } label: {
+                        TagRow(tag: tag, isSelected: selectedTag == nil || selectedTag?.id == tag.id)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 // User tags
                 let userTags = tags.filter { !$0.isSystem }
-                if !userTags.isEmpty {
-                    Section("Your Tags") {
-                        ForEach(userTags) { tag in
-                            TagRow(tag: tag, isSelected: selectedTag?.id == tag.id)
-                                .onTapGesture {
-                                    selectedTag = tag
-                                    dismiss()
-                                }
+                Section("Your Tags") {
+                    Button { showCreate = true } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(Color.accentPrimary)
+                            Text("New tag")
+                                .foregroundStyle(Color.accentPrimary)
+                            Spacer()
                         }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    ForEach(userTags) { tag in
+                        Button {
+                            selectedTag = tag
+                            dismiss()
+                        } label: {
+                            TagRow(tag: tag, isSelected: selectedTag?.id == tag.id)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -43,6 +60,11 @@ struct TagPickerSheet: View {
                     Button("Done") { dismiss() }
                         .foregroundStyle(Color.accentPrimary)
                 }
+            }
+            .sheet(isPresented: $showCreate) {
+                TagEditSheet()
+                    .presentationDetents([.height(400)])
+                    .presentationBackground(Color.bgPrimary)
             }
         }
         .presentationDetents([.medium])
@@ -55,9 +77,7 @@ private struct TagRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(Color.tagColor(tag.colorToken))
-                .frame(width: 14, height: 14)
+            TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 14)
             Text(tag.name)
                 .foregroundStyle(Color.textPrimary)
             Spacer()
@@ -67,5 +87,6 @@ private struct TagRow: View {
                     .font(.system(size: 15, weight: .semibold))
             }
         }
+        .contentShape(Rectangle())
     }
 }

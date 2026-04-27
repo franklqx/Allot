@@ -22,8 +22,26 @@ struct ContentView: View {
     @State private var recoverySentinel: ActiveSessionSentinel?
     @State private var homeSelectedDate: Date = Date()
 
+    /// Custom selection binding — when user taps the .add (FAB) tab we run
+    /// `handleAddTap()` but never write `.add` into `selectedTab`, so the
+    /// TabView's content never flips to the placeholder Color.clear and we
+    /// avoid the visible flash on FAB-to-today.
+    private var tabSelection: Binding<AppTab> {
+        Binding(
+            get: { selectedTab },
+            set: { new in
+                if new == .add {
+                    handleAddTap()
+                } else {
+                    selectedTab = new
+                    lastRealTab = new
+                }
+            }
+        )
+    }
+
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: tabSelection) {
             SwiftUI.Tab("Home", systemImage: "house", value: AppTab.home) {
                 HomeView(
                     selectedDate: $homeSelectedDate,
@@ -34,28 +52,19 @@ struct ContentView: View {
                 FocusTabView()
             }
             SwiftUI.Tab("Allotted", systemImage: "chart.bar.xaxis", value: AppTab.allotted) {
-                AllottedView()
+                AllottedView(anchorDate: $homeSelectedDate)
             }
             // Repurposed search slot — detached right pill.
-            // Only the default (+) state uses the filled-disc variant for that
-            // strong CTA look; the calendar/timer hint states stay as plain
-            // symbols so they aren't squeezed by the dark disc treatment.
+            // The custom binding above intercepts taps so we never actually
+            // switch to this tab; the placeholder content is unreachable.
             SwiftUI.Tab("Add", systemImage: fabIcon, value: AppTab.add, role: .search) {
-                Color.clear    // never shown; we intercept selection
+                Color.clear
             }
         }
         .tint(Color.textPrimary)
-        .onChange(of: selectedTab) { _, new in
-            guard new == .add else {
-                lastRealTab = new
-                return
-            }
-            handleAddTap()
-            // Snap selection back to the previous real tab on next runloop.
-            DispatchQueue.main.async { selectedTab = lastRealTab }
-        }
-        .fullScreenCover(isPresented: $showNewTask) {
+        .sheet(isPresented: $showNewTask) {
             NewTaskView(prefilledDate: homeSelectedDate)
+                .presentationDetents([.large])
         }
         .onAppear(perform: checkKillRecovery)
         .alert("Timer was running", isPresented: Binding(
@@ -91,9 +100,10 @@ struct ContentView: View {
 
     private func handleAddTap() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        // Anchor is shared with Allotted, so this also resets that tab.
+        // Stay on whichever tab the user was on (lastRealTab is already set).
         if !Calendar.current.isDateInToday(homeSelectedDate) {
             homeSelectedDate = Date()
-            lastRealTab = .home
             return
         }
         showNewTask = true
@@ -107,7 +117,9 @@ struct ContentView: View {
         task.timerMode = .stopwatch
         timerService.start(task: task, in: modelContext)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        withAnimation { selectedTab = .focus }
+        // Snap directly to focus — animating the tab switch creates a fade
+        // that combines unpleasantly with the immersive cover presentation.
+        selectedTab = .focus
     }
 
     private func checkKillRecovery() {

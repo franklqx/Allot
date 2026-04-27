@@ -19,24 +19,31 @@ struct HomeView: View {
     @State private var taskToComplete: WorkTask?
     @State private var onceTaskDetail: WorkTask?
     @State private var recurringTaskDetail: WorkTask?
+    @State private var taskToEdit: WorkTask?
+    @State private var showDateJump = false
 
     // MARK: Computed
 
     private var tasksForDate: [WorkTask] {
-        let filtered = allTasks.filter { $0.isScheduled(on: selectedDate) }
+        let filtered = allTasks
+            .filter { $0.archivedAt == nil }
+            .filter { $0.isScheduled(on: selectedDate) }
         let visible  = hideCompleted ? filtered.filter { !$0.isCompleted(on: selectedDate) } : filtered
-        return visible.sorted {
-            switch ($0.startTime, $1.startTime) {
-            case (let a?, let b?): return a < b
-            case (nil, nil):       return $0.createdAt < $1.createdAt
-            case (_?, nil):        return true
-            case (nil, _?):        return false
-            }
+        return visible.sorted(by: orderingComparator)
+    }
+
+    private func orderingComparator(_ a: WorkTask, _ b: WorkTask) -> Bool {
+        if a.sortOrder != b.sortOrder { return a.sortOrder < b.sortOrder }
+        switch (a.startTime, b.startTime) {
+        case (let x?, let y?): return x < y
+        case (nil, nil):       return a.createdAt < b.createdAt
+        case (_?, nil):        return true
+        case (nil, _?):        return false
         }
     }
 
     private var completedCount: Int {
-        allTasks.filter { $0.isScheduled(on: selectedDate) && $0.isCompleted(on: selectedDate) }.count
+        allTasks.filter { $0.archivedAt == nil && $0.isScheduled(on: selectedDate) && $0.isCompleted(on: selectedDate) }.count
     }
 
     // MARK: Body
@@ -44,27 +51,17 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                headerBar
+                topHeader
                 DateStripView(selectedDate: $selectedDate)
-                Divider()
-                    .foregroundStyle(Color.textPrimary.opacity(0.06))
+                    .padding(.top, 8)
                 taskList
             }
             .background(Color.bgPrimary)
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink(destination: SettingsView()) {
-                        Image(systemName: "gearshape")
-                            .foregroundStyle(Color.textSecondary)
-                    }
-                }
-            }
+            .navigationBarHidden(true)
         }
         .sheet(item: $taskToComplete) { task in
             CompleteSheet(task: task, date: selectedDate)
-                .presentationDetents([.height(task.workedSeconds(on: selectedDate) > 0 ? 360 : 420)])
+                .presentationDetents([.height(task.workedSeconds(on: selectedDate) > 0 ? 300 : 290)])
                 .presentationDragIndicator(.hidden)
                 .presentationBackground(Color.bgElevated)
         }
@@ -72,7 +69,7 @@ struct HomeView: View {
             OncePanelView(
                 task: task,
                 date: selectedDate,
-                onEdit: { },
+                onEdit: { taskToEdit = task },
                 onStart: { onStart(task) }
             )
             .presentationDetents([.height(panelHeight(for: task))])
@@ -83,41 +80,65 @@ struct HomeView: View {
             RecurringPanelView(
                 task: task,
                 date: selectedDate,
-                onEdit: { },
+                onEdit: { taskToEdit = task },
                 onStart: { onStart(task) }
             )
             .presentationBackground(Color.bgElevated)
         }
+        .sheet(item: $taskToEdit) { task in
+            NewTaskView(prefilledDate: selectedDate, editingTask: task)
+                .presentationDetents([.large])
+        }
+        .sheet(isPresented: $showDateJump) {
+            DateJumpSheet(date: $selectedDate, onDismiss: { showDateJump = false })
+                .presentationDetents([.medium])
+                .presentationBackground(Color.bgElevated)
+        }
     }
 
-    // MARK: Header
+    // MARK: Top header
 
-    private var headerBar: some View {
+    private var topHeader: some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(selectedDate.formatted(.dateTime.weekday(.wide)))
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Color.textPrimary)
-                Text(selectedDate.formatted(.dateTime.month(.abbreviated).day()))
-                    .font(.system(size: 17))
-                    .foregroundStyle(Color.textSecondary)
+            Button {
+                showDateJump = true
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectedDate.formatted(.dateTime.weekday(.wide)))
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(Color.textPrimary)
+                    Text(selectedDate.formatted(.dateTime.month(.abbreviated).day()))
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.textSecondary)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             Spacer()
+            NavigationLink(destination: SettingsView()) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(Color.textSecondary)
+                    .frame(width: 36, height: 36)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 8)
-        .padding(.bottom, 12)
+        .padding(.bottom, 8)
     }
 
     // MARK: Task list
 
     private var taskList: some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                if tasksForDate.isEmpty {
-                    emptyState
-                } else {
-                    ForEach(tasksForDate, id: \.id) { task in
+        List {
+            if tasksForDate.isEmpty {
+                emptyState
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
+            } else {
+                ForEach(tasksForDate, id: \.id) { task in
+                    VStack(spacing: 0) {
                         TaskRowView(
                             task: task,
                             date: selectedDate,
@@ -126,17 +147,23 @@ struct HomeView: View {
                             onIconTap: { handleIconTap(task) },
                             onRowTap:  { openDetail(task) }
                         )
-                        Divider()
-                            .padding(.leading, 60)
-                            .foregroundStyle(Color.textPrimary.opacity(0.06))
+                        DottedDivider()
                     }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
                 }
-
-                hideShowToggle
-                    .padding(.top, 12)
-                    .padding(.bottom, 140)
+                .onMove(perform: moveTasks)
             }
+
+            hideShowToggle
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 12, leading: 0, bottom: 140, trailing: 0))
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.bgPrimary)
     }
 
     private var emptyState: some View {
@@ -148,40 +175,47 @@ struct HomeView: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Color.textTertiary.opacity(0.6))
         }
+        .frame(maxWidth: .infinity)
         .padding(.top, 60)
     }
 
     @ViewBuilder
     private var hideShowToggle: some View {
         if completedCount > 0 {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    hideCompleted.toggle()
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    if hideCompleted {
-                        Image(systemName: "eye")
-                        Text("Show \(completedCount) completed")
-                    } else {
-                        Image(systemName: "eye.slash")
-                        Text("Hide \(completedCount) completed")
+            HStack {
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        hideCompleted.toggle()
                     }
+                } label: {
+                    HStack(spacing: 8) {
+                        if hideCompleted {
+                            Image(systemName: "eye")
+                            Text("Show \(completedCount) completed")
+                        } else {
+                            Image(systemName: "eye.slash")
+                            Text("Hide \(completedCount) completed")
+                        }
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.bgSecondary, in: Capsule())
                 }
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.textSecondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color.bgSecondary, in: Capsule())
+                .buttonStyle(.plain)
+                Spacer()
             }
-            .buttonStyle(.plain)
+        } else {
+            Color.clear.frame(height: 1)
         }
     }
 
     // MARK: Actions
 
     private func panelHeight(for task: WorkTask) -> CGFloat {
-        var height: CGFloat = 220                                   // title + meta + Start + Edit/Remove row
+        var height: CGFloat = 220
         if task.tag != nil && !(task.tag?.isSystem ?? true) { height += 40 }
         if task.workedSeconds(on: selectedDate) > 0 { height += 70 }
         return min(height + 40, 480)
@@ -203,5 +237,59 @@ struct HomeView: View {
         }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         taskToComplete = task
+    }
+
+    private func moveTasks(from source: IndexSet, to destination: Int) {
+        var working = tasksForDate
+        working.move(fromOffsets: source, toOffset: destination)
+        for (index, task) in working.enumerated() {
+            task.sortOrder = index + 1
+        }
+        try? modelContext.save()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+}
+
+// MARK: Calendar jump sheet
+
+private struct DateJumpSheet: View {
+    @Binding var date: Date
+    let onDismiss: () -> Void
+
+    @State private var draft: Date
+
+    init(date: Binding<Date>, onDismiss: @escaping () -> Void) {
+        self._date = date
+        self.onDismiss = onDismiss
+        self._draft = State(initialValue: date.wrappedValue)
+    }
+
+    var body: some View {
+        NavigationStack {
+            DatePicker("", selection: $draft, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .tint(Color.accentPrimary)
+                .padding()
+                .navigationTitle("Jump to date")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Today") {
+                            draft = Date()
+                            date = Date()
+                            onDismiss()
+                        }
+                        .foregroundStyle(Color.textSecondary)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            date = draft
+                            onDismiss()
+                        }
+                        .foregroundStyle(Color.accentPrimary)
+                        .fontWeight(.semibold)
+                    }
+                }
+        }
     }
 }

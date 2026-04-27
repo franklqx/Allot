@@ -126,12 +126,15 @@ enum Radius {
 // MARK: Duration formatting
 
 func formatDuration(_ seconds: Int) -> String {
-    guard seconds >= 60 else { return "0m" }
+    guard seconds > 0 else { return "0s" }
     let h = seconds / 3600
     let m = (seconds % 3600) / 60
-    if h == 0 { return "\(m)m" }
-    if m == 0 { return "\(h)h" }
-    return "\(h)h \(m)m"
+    let s = seconds % 60
+    var parts: [String] = []
+    if h > 0 { parts.append("\(h)h") }
+    if m > 0 { parts.append("\(m)m") }
+    if s > 0 { parts.append("\(s)s") }
+    return parts.joined(separator: " ")
 }
 
 func formatClock(_ seconds: Int) -> String {

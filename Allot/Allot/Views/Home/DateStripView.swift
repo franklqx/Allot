@@ -2,54 +2,95 @@
 //  DateStripView.swift
 //  Allot
 //
-//  7-day week strip. Swipe left/right to advance/retreat one full week.
+//  Monday-anchored 7-day strip. Visible week always contains `selectedDate`.
+//  Swipe horizontally → follow finger; release snaps to the prev/next week
+//  AND advances `selectedDate` by ±7 days so the same weekday stays selected.
+//
 
 import SwiftUI
 
 struct DateStripView: View {
     @Binding var selectedDate: Date
 
-    @State private var weekOffset: Int = 0
-    @GestureState private var dragOffset: CGFloat = 0
+    @GestureState private var dragTranslation: CGFloat = 0
 
-    private let cal = Calendar.current
-    private let dayLetters = ["SUN","MON","TUE","WED","THU","FRI","SAT"]
+    private var calendar: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.firstWeekday = 2          // Monday
+        return c
+    }
 
-    private var weekDays: [Date] {
-        // Monday-anchored week for the current weekOffset
-        let now = Date()
-        let todayWeekday = cal.component(.weekday, from: now)  // 1=Sun
-        // Days since Monday
-        let daysFromMonday = (todayWeekday + 5) % 7
-        let thisMonday = cal.date(byAdding: .day, value: -daysFromMonday + (weekOffset * 7), to: cal.startOfDay(for: now))!
-        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: thisMonday) }
+    private func mondayOf(_ date: Date) -> Date {
+        calendar.dateInterval(of: .weekOfYear, for: date)?.start
+            ?? calendar.startOfDay(for: date)
+    }
+
+    private func weekDays(weeksOffset: Int) -> [Date] {
+        let baseMonday = mondayOf(selectedDate)
+        guard let monday = calendar.date(byAdding: .day, value: weeksOffset * 7, to: baseMonday)
+        else { return [] }
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: monday) }
     }
 
     var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            HStack(spacing: 0) {
+                weekRow(weekDays(weeksOffset: -1)).frame(width: w)
+                weekRow(weekDays(weeksOffset: 0)).frame(width: w)
+                weekRow(weekDays(weeksOffset: 1)).frame(width: w)
+            }
+            .offset(x: -w + dragTranslation)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 10)
+                    .updating($dragTranslation) { value, state, _ in
+                        state = value.translation.width
+                    }
+                    .onEnded { value in
+                        let threshold = w * 0.25
+                        let predicted = value.predictedEndTranslation.width
+                        let delta: Int
+                        if predicted < -threshold {
+                            delta = 1               // swipe left → next week
+                        } else if predicted > threshold {
+                            delta = -1              // swipe right → prev week
+                        } else {
+                            delta = 0
+                        }
+                        if delta != 0 {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                                if let shifted = calendar.date(byAdding: .day, value: delta * 7, to: selectedDate) {
+                                    selectedDate = shifted
+                                }
+                            }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+                    }
+            )
+        }
+        .frame(height: 64)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+
+    private func weekRow(_ days: [Date]) -> some View {
         HStack(spacing: 0) {
-            ForEach(weekDays, id: \.self) { day in
+            ForEach(days, id: \.self) { day in
                 DayCell(
                     date: day,
-                    isSelected: cal.isDate(day, inSameDayAs: selectedDate),
-                    isToday: cal.isDateInToday(day)
+                    isSelected: calendar.isDate(day, inSameDayAs: selectedDate),
+                    isToday: calendar.isDateInToday(day)
                 )
-                .onTapGesture { selectedDate = day }
+                .onTapGesture {
+                    if !calendar.isDate(day, inSameDayAs: selectedDate) {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                    selectedDate = day
+                }
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
-        .gesture(
-            DragGesture(minimumDistance: 30)
-                .onEnded { value in
-                    let threshold: CGFloat = 50
-                    if value.translation.width < -threshold {
-                        weekOffset += 1
-                    } else if value.translation.width > threshold {
-                        weekOffset -= 1
-                    }
-                }
-        )
     }
 }
 
@@ -66,14 +107,13 @@ private struct DayCell: View {
             let letters = ["SUN","MON","TUE","WED","THU","FRI","SAT"]
             Text(letters[weekday - 1])
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.white.opacity(0.75) : Color.textTertiary)
+                .foregroundStyle(isSelected ? Color.bgPrimary.opacity(0.75) : Color.textTertiary)
                 .kerning(0.5)
 
             Text("\(cal.component(.day, from: date))")
-                .font(.system(size: 17, weight: isSelected ? .semibold : .regular, design: .monospaced))
-                .foregroundStyle(isSelected ? .white : Color.textPrimary)
+                .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.bgPrimary : Color.textPrimary)
 
-            // Today dot (only when not selected)
             Circle()
                 .fill(Color.accentPrimary)
                 .frame(width: 4, height: 4)

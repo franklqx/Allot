@@ -17,6 +17,7 @@ struct StopConfirmView: View {
 
     @State private var countdown = 2
     @State private var showDurationEdit = false
+    @State private var showAttachSheet = false
     @State private var editedMinutes: Int
 
     private var duration: Int {
@@ -39,14 +40,19 @@ struct StopConfirmView: View {
 
             if duration < 30 {
                 discardPrompt
+            } else if session.workTask == nil {
+                attachPrompt
             } else {
                 savePrompt
             }
         }
         .background(Color.bgElevated)
-        .presentationDetents([.height(200)])
+        .presentationDetents([.height(session.workTask == nil ? 220 : 200)])
         .presentationDragIndicator(.hidden)
-        .task { await autoSave() }
+        .task {
+            // Only auto-save bound sessions; unbound waits for explicit choice.
+            if session.workTask != nil { await autoSave() }
+        }
         .sheet(isPresented: $showDurationEdit) {
             HorizontalSliderView(
                 mode: .duration,
@@ -56,6 +62,14 @@ struct StopConfirmView: View {
             )
             .presentationDetents([.height(260)])
             .presentationBackground(Color.black)
+        }
+        .sheet(isPresented: $showAttachSheet) {
+            UnboundSessionAttachSheet(session: session) {
+                dismiss()
+                onDone()
+            }
+            .presentationDetents([.large])
+            .presentationBackground(Color.bgElevated)
         }
     }
 
@@ -94,6 +108,35 @@ struct StopConfirmView: View {
         }
     }
 
+    private var attachPrompt: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Recorded \(formatDuration(duration))")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.textPrimary)
+                Text("Pick a task — every session needs one")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.textSecondary)
+            }
+            .padding(.horizontal, 24)
+
+            HStack(spacing: 8) {
+                ActionButton(label: "Discard", systemImage: "trash", destructive: true) {
+                    discard()
+                }
+                ActionButton(
+                    label: "Choose task",
+                    systemImage: "link",
+                    accent: true
+                ) {
+                    showAttachSheet = true
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+        }
+    }
+
     private var discardPrompt: some View {
         VStack(spacing: 16) {
             Text("That was under 30 seconds.")
@@ -115,6 +158,14 @@ struct StopConfirmView: View {
 
     // MARK: Actions
 
+    private func discard() {
+        modelContext.delete(session)
+        try? modelContext.save()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        dismiss()
+        onDone()
+    }
+
     private func save() {
         if showDurationEdit {
             // Apply edited duration
@@ -124,6 +175,8 @@ struct StopConfirmView: View {
                 session.totalPausedSeconds = 0
             }
         }
+        // Any successful session counts as completion for that day.
+        session.workTask?.markCompleted(on: session.startAt)
         try? modelContext.save()
         dismiss()
         onDone()

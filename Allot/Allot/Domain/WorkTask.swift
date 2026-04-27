@@ -13,13 +13,13 @@ import SwiftData
     var createdAt: Date
 
     // ── Type & timer ─────────────────────────────────
-    var type: TaskType              // .once / .recurring
+    var type: TaskType              // .once / .recurring / .longTerm
     var timerMode: TimerMode        // .stopwatch / .countdown
     /// Countdown target in seconds. Only used when timerMode == .countdown. Default 1500 (25 min).
     var countdownDuration: Int
 
     // ── Schedule ─────────────────────────────────────
-    /// Calendar date for once tasks. nil for recurring.
+    /// Calendar date for once tasks. nil for recurring/longTerm.
     var scheduledDate: Date?
     /// Scheduled start time as minutes from midnight (0–1439). nil = no fixed time.
     var startTime: Int?
@@ -35,6 +35,11 @@ import SwiftData
     var completedDates: [Date]
     /// Duration (seconds) recorded via quickLog at completion time.
     var completedDuration: Int
+    /// Manual ordering for Home list. Lower values appear first.
+    var sortOrder: Int = 0
+    /// When set, task is archived (long-term "permanently done") and hidden from Home.
+    /// Sessions and analytics still reference it for historical reporting.
+    var archivedAt: Date?
 
     // ── Relationships ────────────────────────────────
     var tag: Tag?
@@ -55,6 +60,8 @@ import SwiftData
         repeatCustomDays: [Int] = [],
         completedDates: [Date] = [],
         completedDuration: Int = 0,
+        sortOrder: Int = 0,
+        archivedAt: Date? = nil,
         tag: Tag? = nil
     ) {
         self.id = id
@@ -69,6 +76,8 @@ import SwiftData
         self.repeatCustomDays = repeatCustomDays
         self.completedDates = completedDates
         self.completedDuration = completedDuration
+        self.sortOrder = sortOrder
+        self.archivedAt = archivedAt
         self.tag = tag
         self.sessions = []
     }

@@ -18,6 +18,18 @@ struct SettingsView: View {
                     Label("Tags", systemImage: "tag")
                         .foregroundStyle(Color.textPrimary)
                 }
+                NavigationLink {
+                    AllTasksView()
+                } label: {
+                    Label("All tasks", systemImage: "list.bullet.rectangle")
+                        .foregroundStyle(Color.textPrimary)
+                }
+                NavigationLink {
+                    ArchivedTasksView()
+                } label: {
+                    Label("Hidden tasks", systemImage: "eye.slash")
+                        .foregroundStyle(Color.textPrimary)
+                }
             }
 
             Section("Appearance") {

@@ -30,6 +30,10 @@ extension WorkTask {
         }
     }
 
+    /// True when the task is archived (paused / hidden from Home).
+    /// Sessions stay in history; user can restore the task from Settings.
+    var isArchived: Bool { archivedAt != nil }
+
     // MARK: Completion
 
     func isCompleted(on date: Date) -> Bool {
@@ -62,9 +66,11 @@ extension WorkTask {
     }
 
     func workedSecondsThisWeek() -> Int {
-        let cal = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2     // Monday — week always runs Mon→Sun.
         let now = Date()
-        let start = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+        let start = cal.dateInterval(of: .weekOfYear, for: now)?.start
+            ?? cal.startOfDay(for: now)
         let end   = cal.date(byAdding: .weekOfYear, value: 1, to: start)!
         return sessions.filter { $0.startAt >= start && $0.startAt < end }.reduce(0) { $0 + effectiveDuration($1) }
     }
