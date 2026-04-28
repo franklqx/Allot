@@ -94,6 +94,7 @@ struct CompleteSheet: View {
                 logManual(seconds: minutes * 60, replacing: true)
             }
             .presentationDetents([.height(320)])
+            .presentationBackground(Color.black)
         }
     }
 
@@ -136,6 +137,7 @@ struct CompleteSheet: View {
                 logManual(seconds: minutes * 60, replacing: false)
             }
             .presentationDetents([.height(320)])
+            .presentationBackground(Color.black)
         }
     }
 
@@ -208,32 +210,22 @@ private struct CustomMinutesSheet: View {
     init(initial: Int, onConfirm: @escaping (Int) -> Void) {
         self.initial = initial
         self.onConfirm = onConfirm
-        self._minutes = State(initialValue: initial)
+        self._minutes = State(initialValue: max(5, (initial / 5) * 5))
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text("Custom duration")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.textPrimary)
-                .padding(.top, 24)
-
-            Picker("", selection: $minutes) {
-                ForEach(1...600, id: \.self) { m in
-                    Text("\(m) min").tag(m)
-                }
-            }
-            .pickerStyle(.wheel)
-            .frame(height: 160)
-
-            PrimaryButton(title: "Log \(minutes)m") {
+        // Black/red-line ruler (HorizontalSliderView .duration) — consistent
+        // with StopConfirmView's Edit duration picker. Drag the ruler under
+        // the fixed center red line to set the minutes.
+        HorizontalSliderView(
+            mode: .duration,
+            title: "Custom duration",
+            valueMinutes: $minutes,
+            onDismiss: {
                 onConfirm(minutes)
                 dismiss()
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
-        }
-        .background(Color.bgElevated)
+        )
     }
 }
 

@@ -22,7 +22,7 @@ struct HorizontalSliderView: View {
     @State private var isDragging = false
     @State private var pixelOffset: CGFloat = 0
 
-    private let tickSpacing: CGFloat = 18  // px per 5-min step
+    private let tickSpacing: CGFloat = 14  // px per 5-min step (tighter = denser ruler, easier precise drag)
     private var maxMinutes: Int { mode == .timeOfDay ? 23 * 60 + 55 : 12 * 60 }
     private var minMinutes: Int { mode == .timeOfDay ? 0 : 5 }
 
@@ -44,9 +44,9 @@ struct HorizontalSliderView: View {
                 .padding(.top, 8)
 
             ruler
-                .frame(height: 72)
+                .frame(height: 96)
                 .gesture(dragGesture)
-                .padding(.top, 12)
+                .padding(.top, 16)
 
             Button {
                 onDismiss()
@@ -75,7 +75,9 @@ struct HorizontalSliderView: View {
     private var ruler: some View {
         Canvas { ctx, size in
             let cx = size.width / 2
-            let cy = size.height / 2
+            // Ticks centered vertically in the upper 60% of the canvas; labels
+            // sit below. Cursor spans the whole height for visual emphasis.
+            let tickCenterY = size.height * 0.42
             let currentStep = valueMinutes / 5
             let visible = Int(size.width / tickSpacing) + 6
 
@@ -83,31 +85,58 @@ struct HorizontalSliderView: View {
                 let step = currentStep - visible / 2 + i
                 guard step >= (minMinutes / 5) && step <= (maxMinutes / 5) else { continue }
 
+                let minutesAtStep = step * 5
                 let x = cx + CGFloat(i - visible / 2) * tickSpacing + pixelOffset
-                let isHour: Bool
-                switch mode {
-                case .timeOfDay: isHour = (step * 5) % 60 == 0
-                case .duration:  isHour = (step * 5) % 60 == 0
-                }
-                let h: CGFloat = isHour ? 22 : 10
+                let isHour = minutesAtStep % 60 == 0
+                let isHalf = minutesAtStep % 30 == 0 && !isHour
+                let h: CGFloat = isHour ? 26 : (isHalf ? 16 : 8)
+                let opacity: CGFloat = isHour ? 0.55 : (isHalf ? 0.32 : 0.16)
 
                 var p = Path()
-                p.move(to: CGPoint(x: x, y: cy - h / 2))
-                p.addLine(to: CGPoint(x: x, y: cy + h / 2))
-                ctx.stroke(p, with: .color(.white.opacity(isHour ? 0.45 : 0.18)), lineWidth: 1)
+                p.move(to: CGPoint(x: x, y: tickCenterY - h / 2))
+                p.addLine(to: CGPoint(x: x, y: tickCenterY + h / 2))
+                ctx.stroke(p, with: .color(.white.opacity(opacity)), lineWidth: 1)
+
+                // Label every hour tick (skip if it would crowd the cursor).
+                if isHour {
+                    let label = hourLabel(forMinutes: minutesAtStep)
+                    let text = Text(label)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.42))
+                    let resolved = ctx.resolve(text)
+                    ctx.draw(
+                        resolved,
+                        at: CGPoint(x: x, y: tickCenterY + 22),
+                        anchor: .top
+                    )
+                }
             }
 
-            // Red cursor
+            // Red cursor — true red (#FF3B30-ish) so it stays visible on the
+            // black ruler regardless of light/dark color-scheme mapping.
+            let cursorColor = Color(red: 1.0, green: 0.27, blue: 0.23)
             var cursor = Path()
-            cursor.move(to: CGPoint(x: cx, y: 4))
-            cursor.addLine(to: CGPoint(x: cx, y: size.height - 4))
-            ctx.stroke(cursor, with: .color(Color.accentPrimary), lineWidth: 2)
+            cursor.move(to: CGPoint(x: cx, y: 0))
+            cursor.addLine(to: CGPoint(x: cx, y: size.height))
+            ctx.stroke(cursor, with: .color(cursorColor), lineWidth: 2.5)
 
-            // Bottom dot on cursor
-            ctx.fill(
-                Path(ellipseIn: CGRect(x: cx - 4, y: size.height - 10, width: 8, height: 8)),
-                with: .color(Color.accentPrimary)
-            )
+            // Cursor cap — small triangle at top to read as a "selector".
+            var cap = Path()
+            cap.move(to: CGPoint(x: cx - 5, y: 0))
+            cap.addLine(to: CGPoint(x: cx + 5, y: 0))
+            cap.addLine(to: CGPoint(x: cx, y: 7))
+            cap.closeSubpath()
+            ctx.fill(cap, with: .color(cursorColor))
+        }
+    }
+
+    private func hourLabel(forMinutes m: Int) -> String {
+        switch mode {
+        case .timeOfDay:
+            return String(format: "%02d:00", m / 60)
+        case .duration:
+            let h = m / 60
+            return h == 0 ? "0" : "\(h)h"
         }
     }
 

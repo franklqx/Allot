@@ -80,12 +80,29 @@ struct TaskRowView: View {
 
     @ViewBuilder
     private var rightMeta: some View {
-        if !isRunning, let startTime = task.startTime {
+        if isRunning {
+            // Live ticker takes the same slot as the planned start time so
+            // running tasks read as "this is the time on this row" rather than
+            // hiding the icon behind a number.
+            Text(compactClock(elapsedSeconds))
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.textPrimary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .animation(nil, value: elapsedSeconds)
+        } else if let startTime = task.startTime {
             Text(formatStartTime(startTime))
                 .font(.system(size: 14, weight: .regular, design: .monospaced))
                 .foregroundStyle(isCompleted ? Color.textTertiary : Color.textSecondary)
         }
     }
+}
+
+private func compactClock(_ seconds: Int) -> String {
+    let m = seconds / 60
+    let s = seconds % 60
+    if m >= 60 { return String(format: "%d:%02d", m/60, m%60) }
+    return String(format: "%d:%02d", m, s)
 }
 
 // MARK: Task type icon
@@ -99,34 +116,18 @@ private struct TaskIconView: View {
 
     var body: some View {
         ZStack {
-            if isRunning {
-                Text(compactClock(elapsedSeconds))
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.textPrimary)
-                    .frame(width: 28, height: 22)
-                    .background(Color.textPrimary.opacity(0.08), in: Capsule())
-                    .animation(nil, value: elapsedSeconds)
-            } else {
-                TaskBox(
-                    color: color,
-                    style: TaskBox.style(for: type),
-                    size: 22,
-                    cornerRadius: 5
-                )
+            TaskBox(
+                color: color,
+                style: TaskBox.style(for: type),
+                size: 22,
+                cornerRadius: 5
+            )
 
-                if isCompleted {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.textTertiary)
-                }
+            if isCompleted {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.textTertiary)
             }
         }
-    }
-
-    private func compactClock(_ seconds: Int) -> String {
-        let m = seconds / 60
-        let s = seconds % 60
-        if m >= 60 { return String(format: "%d:%02d", m/60, m%60) }
-        return String(format: "%d:%02d", m, s)
     }
 }

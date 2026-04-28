@@ -90,10 +90,10 @@ private let kTaskPalette: [String] = ["sky", "marigold", "rose", "lilac", "lime"
 
 struct AllottedView: View {
 
-    /// Single shared date, owned by ContentView. Home strip and Allotted anchor
-    /// read/write the same value so navigating one updates the other and the
-    /// FAB-to-today action can reset both at once.
-    @Binding var anchorDate: Date
+    /// Allotted owns its own anchor — independent from Home's selected date.
+    /// Always reset to today on appear so switching tabs lands the user on
+    /// the current period without surprise.
+    @State private var anchorDate: Date = Date()
 
     @Query private var allSessions: [TimeSession]
 
@@ -106,10 +106,6 @@ struct AllottedView: View {
     @State private var highlightId:     UUID?     = nil
     @State private var expandedLegendId: UUID?    = nil   // legend (tag mode) expansion
     @State private var expandedByTagId:  UUID?    = nil   // "By Tag" supplementary section (task mode)
-
-    init(anchorDate: Binding<Date>) {
-        self._anchorDate = anchorDate
-    }
 
     private var timeRange: TimeRange {
         mode == .task ? taskRange : tagRange
@@ -350,6 +346,17 @@ struct AllottedView: View {
                 expandedLegendId = nil
                 expandedByTagId = nil
             }
+            .onAppear {
+                // Always land on today's Day-level data regardless of where
+                // we left off — mode/range/date all reset. Filters are kept
+                // since they reflect the user's saved preferences.
+                anchorDate = Date()
+                mode = .task
+                taskRange = .day
+                highlightId = nil
+                expandedLegendId = nil
+                expandedByTagId = nil
+            }
         }
     }
 
@@ -419,8 +426,18 @@ struct AllottedView: View {
                             // mode), also pop the legend row open so the user
                             // can read the breakdown without scrolling-and-tapping.
                             let stat = stats.first(where: { $0.id == id })
-                            let canExpand = stat?.isOthers == true ||
-                                (mode == .tag && stat != nil)
+                            let canExpand: Bool = {
+                                guard let s = stat else { return false }
+                                if s.isOthers { return true }
+                                if mode == .tag { return true }
+                                if mode == .task && timeRange == .day, let t = s.task {
+                                    return !sessionsForTaskOnAnchorDay(t).isEmpty
+                                }
+                                if mode == .task && timeRange == .week, s.task != nil {
+                                    return true
+                                }
+                                return false
+                            }()
                             if canExpand {
                                 expandedLegendId = (expandedLegendId == id) ? nil : id
                             }
@@ -523,10 +540,14 @@ struct AllottedView: View {
         let expandable: Bool = {
             if stat.isOthers, let kids = stat.othersChildren, !kids.isEmpty { return true }
             if mode == .tag { return !legendBreakdownEntries(for: stat).isEmpty }
+            if mode == .task && timeRange == .day, let t = stat.task {
+                return !sessionsForTaskOnAnchorDay(t).isEmpty
+            }
+            if mode == .task && timeRange == .week, stat.task != nil {
+                return true
+            }
             return false
         }()
-        let isExpanded = expandable && expandedLegendId == stat.id
-
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             withAnimation(.easeInOut(duration: 0.22)) {
@@ -538,16 +559,13 @@ struct AllottedView: View {
                 }
             }
         } label: {
-            legendLabel(stat: stat, dimmed: dimmed, isExpanded: isExpanded, expandable: expandable)
+            legendLabel(stat: stat, dimmed: dimmed)
         }
         .buttonStyle(.plain)
     }
 
-    private func legendLabel(stat: AllotStat, dimmed: Bool, isExpanded: Bool, expandable: Bool) -> some View {
+    private func legendLabel(stat: AllotStat, dimmed: Bool) -> some View {
         let color = Color.tagColor(stat.colorToken)
-        // Others row stays visually identical to non-expandable rows — just an
-        // ordinary line item that happens to expand on tap.
-        let showChevron = expandable && !stat.isOthers
         return HStack(spacing: 12) {
             indicator(stat: stat, color: color, dimmed: dimmed)
 
@@ -559,22 +577,19 @@ struct AllottedView: View {
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     Text(String(format: "%.0f%%", stat.fraction * 100))
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                         .foregroundStyle(Color.textSecondary.opacity(dimmed ? 0.35 : 1))
-                        .frame(width: 40, alignment: .trailing)
-                    Text(formatDuration(stat.seconds))
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(width: 48, alignment: .trailing)
+                    Text(formatDurationCompact(stat.seconds))
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.textPrimary.opacity(dimmed ? 0.35 : 1))
-                        .frame(width: 80, alignment: .trailing)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 80, alignment: .trailing)
                 }
                 progressBar(color: color, fraction: stat.fraction, dimmed: dimmed)
-            }
-            if showChevron {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.textTertiary.opacity(0.6))
-                    .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                    .animation(.easeInOut(duration: 0.2), value: isExpanded)
             }
         }
         .padding(.horizontal, 20)
@@ -641,9 +656,119 @@ struct AllottedView: View {
         // Others row → render the merged source items directly.
         if stat.isOthers, let kids = stat.othersChildren, !kids.isEmpty {
             othersChildrenBreakdown(kids)
+        } else if mode == .task && timeRange == .day, let task = stat.task {
+            taskDaySessionsBreakdown(for: task, color: Color.tagColor(stat.colorToken))
+        } else if mode == .task && timeRange == .week, let task = stat.task {
+            taskWeekDailyBreakdown(for: task, color: Color.tagColor(stat.colorToken))
         } else {
             tagTaskBreakdown(for: stat)
         }
+    }
+
+    /// Live-timer sessions only: those with a real start/end timestamp.
+    /// Excludes both `.quickLog` (slider input) and `.manualEntry` (manual
+    /// duration entry) which have synthetic midnight startAts.
+    private func sessionsForTaskOnAnchorDay(_ task: WorkTask) -> [TimeSession] {
+        filteredSessions
+            .filter { $0.workTask?.id == task.id && $0.endAt != nil && $0.source == .liveTimer }
+            .sorted { $0.startAt < $1.startAt }
+    }
+
+    @ViewBuilder
+    private func taskDaySessionsBreakdown(for task: WorkTask, color: Color) -> some View {
+        let sessions = sessionsForTaskOnAnchorDay(task)
+        let f: DateFormatter = {
+            let f = DateFormatter(); f.dateFormat = "HH:mm"; return f
+        }()
+        VStack(spacing: 0) {
+            ForEach(sessions, id: \.id) { session in
+                let dur = max(0, Int((session.endAt ?? session.startAt).timeIntervalSince(session.startAt)) - session.totalPausedSeconds)
+                let endStr = session.endAt.map { f.string(from: $0) } ?? "—"
+                HStack(spacing: 12) {
+                    Capsule()
+                        .fill(color)
+                        .frame(width: 3, height: 18)
+                    Text("\(f.string(from: session.startAt)) – \(endStr)")
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.textSecondary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
+                    Text(formatDurationCompact(dur))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .padding(.leading, 44)
+                .padding(.trailing, 20)
+                .padding(.vertical, 7)
+            }
+        }
+        .padding(.bottom, 6)
+        .background(Color.textPrimary.opacity(0.025))
+    }
+
+    /// Per-day totals for the current anchor's week (Mon→Sun, 7 entries).
+    /// Each entry is `(date, totalSeconds)`; zero-second days are kept so the
+    /// breakdown always renders a full 7-row picture.
+    private func weeklyDailyTotals(for task: WorkTask) -> [(date: Date, seconds: Int)] {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2
+        let (weekStart, _) = TimeRange.week.interval(from: anchorDate)
+        return (0..<7).map { offset in
+            let day = cal.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
+            let dayEnd = cal.date(byAdding: .day, value: 1, to: day) ?? day
+            let total = filteredSessions
+                .filter { s in
+                    s.workTask?.id == task.id &&
+                    s.endAt != nil &&
+                    s.startAt >= day && s.startAt < dayEnd
+                }
+                .reduce(0) { acc, s in
+                    let end = s.endAt ?? s.startAt
+                    return acc + max(0, Int(end.timeIntervalSince(s.startAt)) - s.totalPausedSeconds)
+                }
+            return (day, total)
+        }
+    }
+
+    /// Week-range expansion for a task: one row per day (Mon→Sun in the
+    /// current anchor's week), each showing that day's total duration. Days
+    /// with no sessions render the date with `—`.
+    @ViewBuilder
+    private func taskWeekDailyBreakdown(for task: WorkTask, color: Color) -> some View {
+        let entries = weeklyDailyTotals(for: task)
+        let dayFmt: DateFormatter = {
+            let f = DateFormatter(); f.dateFormat = "EEE MMM d"; return f
+        }()
+        VStack(spacing: 0) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
+                let isToday = Calendar.current.isDate(entry.date, inSameDayAs: Date())
+                let total = entry.seconds
+                HStack(spacing: 12) {
+                    Capsule()
+                        .fill(total > 0 ? color : Color.textPrimary.opacity(0.12))
+                        .frame(width: 3, height: 18)
+                    Text(dayFmt.string(from: entry.date))
+                        .font(.system(size: 13, weight: isToday ? .semibold : .medium))
+                        .foregroundStyle(total > 0 ? Color.textSecondary : Color.textTertiary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
+                    Text(total > 0 ? formatDurationCompact(total) : "—")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(total > 0 ? Color.textPrimary : Color.textTertiary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .padding(.leading, 44)
+                .padding(.trailing, 20)
+                .padding(.vertical, 7)
+            }
+        }
+        .padding(.bottom, 6)
+        .background(Color.textPrimary.opacity(0.025))
     }
 
     @ViewBuilder
@@ -666,11 +791,15 @@ struct AllottedView: View {
                     Text(String(format: "%.0f%%", frac * 100))
                         .font(.system(size: 12))
                         .foregroundStyle(Color.textTertiary)
-                        .frame(width: 40, alignment: .trailing)
-                    Text(formatDuration(kid.seconds))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(width: 44, alignment: .trailing)
+                    Text(formatDurationCompact(kid.seconds))
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.textSecondary)
-                        .frame(width: 80, alignment: .trailing)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 80, alignment: .trailing)
                 }
                 .padding(.leading, 44)
                 .padding(.trailing, 20)
@@ -715,11 +844,15 @@ struct AllottedView: View {
                         Text(String(format: "%.0f%%", frac * 100))
                             .font(.system(size: 12))
                             .foregroundStyle(Color.textTertiary)
-                            .frame(width: 40, alignment: .trailing)
-                        Text(formatDuration(entry.seconds))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(width: 44, alignment: .trailing)
+                        Text(formatDurationCompact(entry.seconds))
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.textSecondary)
-                            .frame(width: 68, alignment: .trailing)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .frame(minWidth: 78, alignment: .trailing)
                     }
                     .padding(.leading, 44)
                     .padding(.trailing, 20)
@@ -779,20 +912,22 @@ struct AllottedView: View {
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                Text(String(format: "%.0f%%", stat.fraction * 100))
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.textSecondary)
-                    .frame(width: 40, alignment: .trailing)
-                Text(formatDuration(stat.seconds))
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.textPrimary)
-                    .frame(width: 68, alignment: .trailing)
-                if expandable {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.textTertiary.opacity(0.6))
-                        .rotationEffect(.degrees(isExpanded ? 0 : -90))
-                        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                // Tight pct+duration block (spacing 0) so the percent column's
+                // right edge lines up with the percent column in `legendLabel`
+                // above — that one also uses HStack(spacing: 0) for these two.
+                HStack(spacing: 0) {
+                    Text(String(format: "%.0f%%", stat.fraction * 100))
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.textSecondary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(width: 48, alignment: .trailing)
+                    Text(formatDurationCompact(stat.seconds))
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(minWidth: 80, alignment: .trailing)
                 }
             }
             .padding(.horizontal, 20)

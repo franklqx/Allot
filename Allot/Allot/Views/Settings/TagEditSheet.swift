@@ -13,6 +13,13 @@ private let tagColorTokens: [String] = [
     "mauve", "terracotta", "rose", "stone",
 ]
 
+/// Curated focus emojis. "Other" tap-to-type covers everything else.
+private let tagEmojiPresets: [String] = [
+    "💻", "📚", "🏋️", "🧘", "🎨",
+    "✍️", "🛠️", "🍳", "☕️", "🎮",
+    "📝", "🎧",
+]
+
 struct TagEditSheet: View {
 
     let tag: Tag?
@@ -22,13 +29,17 @@ struct TagEditSheet: View {
 
     @State private var name: String
     @State private var selectedToken: String
+    @State private var emoji: String
+    @State private var showCustomEmojiField = false
     @State private var showDeleteConfirm = false
     @FocusState private var nameFieldFocused: Bool
+    @FocusState private var emojiFieldFocused: Bool
 
     init(tag: Tag? = nil) {
         self.tag = tag
         _name         = State(wrappedValue: tag?.name       ?? "")
         _selectedToken = State(wrappedValue: tag?.colorToken ?? "coral")
+        _emoji        = State(wrappedValue: tag?.emoji      ?? "")
     }
 
     private var isEditing: Bool { tag != nil }
@@ -70,6 +81,51 @@ struct TagEditSheet: View {
                         }
                     }
                     .padding(.horizontal, 20)
+                }
+                .padding(.bottom, 24)
+
+                // Emoji
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Emoji")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.textSecondary)
+                        Spacer()
+                        if !emoji.isEmpty {
+                            Button("Clear") { emoji = "" }
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.textTertiary)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.flexible()), count: 6),
+                        spacing: 12
+                    ) {
+                        ForEach(tagEmojiPresets, id: \.self) { e in
+                            emojiSwatch(e)
+                        }
+                        otherEmojiSwatch
+                    }
+                    .padding(.horizontal, 20)
+
+                    if showCustomEmojiField {
+                        TextField("Type any emoji", text: $emoji)
+                            .font(.system(size: 22))
+                            .multilineTextAlignment(.center)
+                            .padding(.vertical, 10)
+                            .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
+                            .focused($emojiFieldFocused)
+                            .padding(.horizontal, 20)
+                            .onChange(of: emoji) { _, new in
+                                // Clamp to first grapheme so we never store more than one glyph.
+                                if let first = new.first {
+                                    let s = String(first)
+                                    if s != new { emoji = s }
+                                }
+                            }
+                    }
                 }
 
                 Spacer()
@@ -121,6 +177,48 @@ struct TagEditSheet: View {
         }
     }
 
+    private func emojiSwatch(_ e: String) -> some View {
+        let selected = emoji == e
+        return Text(e)
+            .font(.system(size: 26))
+            .frame(width: 44, height: 44)
+            .background(
+                Circle()
+                    .fill(selected ? Color.tagColor(selectedToken).opacity(0.18) : Color.bgSecondary)
+            )
+            .overlay {
+                if selected {
+                    Circle().stroke(Color.tagColor(selectedToken), lineWidth: 2)
+                }
+            }
+            .onTapGesture {
+                emoji = e
+                showCustomEmojiField = false
+                emojiFieldFocused = false
+            }
+    }
+
+    private var otherEmojiSwatch: some View {
+        let selected = showCustomEmojiField || (!emoji.isEmpty && !tagEmojiPresets.contains(emoji))
+        return Image(systemName: "ellipsis")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(Color.textSecondary)
+            .frame(width: 44, height: 44)
+            .background(
+                Circle()
+                    .fill(selected ? Color.tagColor(selectedToken).opacity(0.18) : Color.bgSecondary)
+            )
+            .overlay {
+                if selected {
+                    Circle().stroke(Color.tagColor(selectedToken), lineWidth: 2)
+                }
+            }
+            .onTapGesture {
+                showCustomEmojiField = true
+                emojiFieldFocused = true
+            }
+    }
+
     private func colorSwatch(_ token: String) -> some View {
         let selected = selectedToken == token
         return Circle()
@@ -143,11 +241,16 @@ struct TagEditSheet: View {
     private func save() {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
+        let cleanedEmoji: String? = {
+            let trimmedEmoji = emoji.trimmingCharacters(in: .whitespaces)
+            return trimmedEmoji.isEmpty ? nil : trimmedEmoji
+        }()
         if let existing = tag {
             existing.name       = trimmed
             existing.colorToken = selectedToken
+            existing.emoji      = cleanedEmoji
         } else {
-            modelContext.insert(Tag(name: trimmed, colorToken: selectedToken))
+            modelContext.insert(Tag(name: trimmed, colorToken: selectedToken, emoji: cleanedEmoji))
         }
         dismiss()
     }

@@ -15,6 +15,7 @@
 import Foundation
 import SwiftData
 import Observation
+import ActivityKit
 
 // Persisted to UserDefaults for app-kill recovery.
 struct ActiveSessionSentinel: Codable {
@@ -53,6 +54,16 @@ struct ActiveSessionSentinel: Codable {
     private var accumulatedPausedSeconds = 0
 
     private static let sentinelKey = "activeSession"
+    private static let reminderIntervalKey = "focusReminderIntervalMinutes"
+    private static let dynamicIslandEnabledKey = "dynamicIslandEnabled"
+
+    // MARK: Live Activity
+
+    private var liveActivity: Activity<FocusActivityAttributes>?
+    /// Reserved hours for the stopwatch timer text on the island. Starts at 1
+    /// so the OS uses M:SS format (tight pill, like Apple Workout). Bumped to
+    /// 24 once we approach the 1-hour mark so long sessions stay correct.
+    private var stopwatchCapHours: Int = 1
 
     // MARK: Controls
 
@@ -74,6 +85,20 @@ struct ActiveSessionSentinel: Codable {
 
         writeSentinel(taskId: task.id, taskTitle: task.title, startAt: now)
         startTicker()
+
+        FocusNotificationScheduler.requestAuthorizationIfNeeded()
+        FocusNotificationScheduler.schedule(
+            taskTitle: task.title,
+            countdownSeconds: countdownSeconds,
+            reminderIntervalMinutes: reminderIntervalMinutesPreference
+        )
+        startLiveActivity(
+            sessionId: session.id,
+            task: task,
+            startAt: now,
+            countdownSeconds: countdownSeconds,
+            todayTotalSeconds: todayTotalSeconds(for: task, in: context)
+        )
     }
 
     func startUnbound(countdownSeconds: Int? = nil, in context: ModelContext) {
@@ -94,6 +119,20 @@ struct ActiveSessionSentinel: Codable {
 
         writeSentinel(taskId: UUID(), taskTitle: "Unbound", startAt: now)
         startTicker()
+
+        FocusNotificationScheduler.requestAuthorizationIfNeeded()
+        FocusNotificationScheduler.schedule(
+            taskTitle: "",
+            countdownSeconds: countdownSeconds,
+            reminderIntervalMinutes: reminderIntervalMinutesPreference
+        )
+        startLiveActivity(
+            sessionId: session.id,
+            task: nil,
+            startAt: now,
+            countdownSeconds: countdownSeconds,
+            todayTotalSeconds: 0
+        )
     }
 
     func pause() {
@@ -102,6 +141,11 @@ struct ActiveSessionSentinel: Codable {
         ticker = nil
         pauseStart = Date()
         isPaused = true
+
+        // Cancel pending notifications — we'll reschedule on resume with the
+        // post-pause anchor so reminder cadence remains correct.
+        FocusNotificationScheduler.cancelAll()
+        updateLiveActivityState()
     }
 
     func resume() {
@@ -112,6 +156,14 @@ struct ActiveSessionSentinel: Codable {
         pauseStart = nil
         isPaused = false
         startTicker()
+
+        FocusNotificationScheduler.schedule(
+            taskTitle: activeSession?.workTask?.title ?? "",
+            countdownSeconds: countdownTarget,
+            reminderIntervalMinutes: reminderIntervalMinutesPreference,
+            elapsedSecondsAtStart: elapsedSeconds
+        )
+        updateLiveActivityState()
     }
 
     func stop(in context: ModelContext) {
@@ -153,6 +205,9 @@ struct ActiveSessionSentinel: Codable {
         try? context.save()
         clearState()
         clearSentinel()
+
+        FocusNotificationScheduler.cancelAll()
+        endLiveActivity()
     }
 
     // MARK: Kill Recovery
@@ -178,10 +233,15 @@ struct ActiveSessionSentinel: Codable {
         context.insert(session)
         try? context.save()
         clearSentinel()
+
+        FocusNotificationScheduler.cancelAll()
+        endAllOrphanedActivities()
     }
 
     func discardKillRecovery() {
         clearSentinel()
+        FocusNotificationScheduler.cancelAll()
+        endAllOrphanedActivities()
     }
 
     // MARK: Helpers
@@ -189,10 +249,60 @@ struct ActiveSessionSentinel: Codable {
     private func startTicker() {
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, let session = self.activeSession, !self.isPaused else { return }
+            let prev = self.elapsedSeconds
             self.elapsedSeconds = max(0, Int(Date().timeIntervalSince(session.startAt)) - self.accumulatedPausedSeconds)
+
+            // Foreground-only: when a countdown hits zero, fire a Live Activity
+            // alert update so the island expands with sound. Background path
+            // is covered by the scheduled local notification.
+            if let target = self.countdownTarget,
+               prev < target,
+               self.elapsedSeconds >= target {
+                self.fireCountdownCompleteAlert()
+            }
+
+            // Stopwatch only: at 55 minutes, extend the island's reserved width
+            // from M:SS to H:MM:SS so the timer keeps rendering correctly past
+            // the hour mark.
+            if self.countdownTarget == nil,
+               self.stopwatchCapHours == 1,
+               prev < 3300,
+               self.elapsedSeconds >= 3300 {
+                self.stopwatchCapHours = 24
+                self.updateLiveActivityState()
+            }
         }
         RunLoop.main.add(t, forMode: .common)
         ticker = t
+    }
+
+    private func fireCountdownCompleteAlert() {
+        guard let activity = liveActivity, let session = activeSession else { return }
+        let task = session.workTask
+        let tag = task?.tag
+        let state = FocusActivityAttributes.ContentState(
+            emoji: tag?.emoji ?? "",
+            tagName: tag?.name ?? "Untagged",
+            tagColorToken: tag?.colorToken ?? "gray",
+            taskTitle: task?.title ?? "",
+            startAt: session.startAt,
+            pausedSeconds: accumulatedPausedSeconds,
+            isPaused: isPaused,
+            countdownSeconds: countdownTarget,
+            todayTotalSeconds: activity.content.state.todayTotalSeconds,
+            stopwatchCapHours: stopwatchCapHours
+        )
+        let alert = AlertConfiguration(
+            title: "时间到",
+            body: LocalizedStringResource(stringLiteral: task?.title ?? "Countdown finished"),
+            sound: .default
+        )
+        Task {
+            await activity.update(
+                ActivityContent(state: state, staleDate: nil),
+                alertConfiguration: alert
+            )
+        }
     }
 
     private func clearState() {
@@ -214,5 +324,119 @@ struct ActiveSessionSentinel: Codable {
 
     private func clearSentinel() {
         UserDefaults.standard.removeObject(forKey: Self.sentinelKey)
+    }
+
+    private var reminderIntervalMinutesPreference: Int {
+        // 0 = off, default to 60 if unset.
+        let stored = UserDefaults.standard.object(forKey: Self.reminderIntervalKey) as? Int
+        return stored ?? 60
+    }
+
+    /// Sum of completed sessions' effective duration for `task` since 00:00 today.
+    /// Used to seed the expanded-island "Today" stat.
+    private func todayTotalSeconds(for task: WorkTask, in context: ModelContext) -> Int {
+        let startOfDay = Calendar.current.startOfDay(for: Date())
+        let taskId = task.id
+        let descriptor = FetchDescriptor<TimeSession>(
+            predicate: #Predicate { s in
+                s.endAt != nil
+                && s.startAt >= startOfDay
+                && s.workTask?.id == taskId
+            }
+        )
+        guard let sessions = try? context.fetch(descriptor) else { return 0 }
+        return sessions.reduce(0) { acc, s in
+            guard let end = s.endAt else { return acc }
+            let raw = Int(end.timeIntervalSince(s.startAt)) - s.totalPausedSeconds
+            return acc + max(0, raw)
+        }
+    }
+
+    // MARK: - Live Activity
+
+    private var dynamicIslandEnabledPreference: Bool {
+        // Default to true if user hasn't toggled the setting yet.
+        let v = UserDefaults.standard.object(forKey: Self.dynamicIslandEnabledKey) as? Bool
+        return v ?? true
+    }
+
+    private func startLiveActivity(
+        sessionId: UUID,
+        task: WorkTask?,
+        startAt: Date,
+        countdownSeconds: Int?,
+        todayTotalSeconds: Int
+    ) {
+        guard dynamicIslandEnabledPreference else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+
+        stopwatchCapHours = 1   // start tight (M:SS); extend at 55-min mark
+
+        let tag = task?.tag
+        let state = FocusActivityAttributes.ContentState(
+            emoji: tag?.emoji ?? "",
+            tagName: tag?.name ?? "Untagged",
+            tagColorToken: tag?.colorToken ?? "gray",
+            taskTitle: task?.title ?? "",
+            startAt: startAt,
+            pausedSeconds: 0,
+            isPaused: false,
+            countdownSeconds: countdownSeconds,
+            todayTotalSeconds: todayTotalSeconds,
+            stopwatchCapHours: stopwatchCapHours
+        )
+        let attributes = FocusActivityAttributes(sessionId: sessionId)
+        do {
+            liveActivity = try Activity.request(
+                attributes: attributes,
+                content: ActivityContent(state: state, staleDate: nil),
+                pushType: nil
+            )
+        } catch {
+            // Live Activity request can fail (e.g. user disabled them) — we
+            // fail silently; the in-app timer + local notifications still work.
+            liveActivity = nil
+        }
+    }
+
+    private func updateLiveActivityState() {
+        guard let activity = liveActivity, let session = activeSession else { return }
+        let task = session.workTask
+        let tag = task?.tag
+        let state = FocusActivityAttributes.ContentState(
+            emoji: tag?.emoji ?? "",
+            tagName: tag?.name ?? "Untagged",
+            tagColorToken: tag?.colorToken ?? "gray",
+            taskTitle: task?.title ?? "",
+            startAt: session.startAt,
+            pausedSeconds: accumulatedPausedSeconds,
+            isPaused: isPaused,
+            countdownSeconds: countdownTarget,
+            todayTotalSeconds: activity.content.state.todayTotalSeconds,
+            stopwatchCapHours: stopwatchCapHours
+        )
+        Task {
+            await activity.update(ActivityContent(state: state, staleDate: nil))
+        }
+    }
+
+    private func endLiveActivity() {
+        let activity = liveActivity
+        liveActivity = nil
+        guard let activity else { return }
+        Task {
+            await activity.end(activity.content, dismissalPolicy: .immediate)
+        }
+    }
+
+    /// Walk every running activity and end it. Used during kill recovery so
+    /// stale islands from a previous app launch don't linger.
+    private func endAllOrphanedActivities() {
+        for activity in Activity<FocusActivityAttributes>.activities {
+            Task {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+        }
+        liveActivity = nil
     }
 }

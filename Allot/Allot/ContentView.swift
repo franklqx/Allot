@@ -52,7 +52,7 @@ struct ContentView: View {
                 FocusTabView()
             }
             SwiftUI.Tab("Allotted", systemImage: "chart.bar.xaxis", value: AppTab.allotted) {
-                AllottedView(anchorDate: $homeSelectedDate)
+                AllottedView()
             }
             // Repurposed search slot — detached right pill.
             // The custom binding above intercepts taps so we never actually

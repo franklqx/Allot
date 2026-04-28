@@ -6,8 +6,10 @@ import SwiftUI
 
 struct SettingsView: View {
 
-    @AppStorage("appColorScheme")          private var colorSchemeString = "system"
-    @AppStorage("hasCompletedOnboarding")  private var hasCompletedOnboarding = true
+    @AppStorage("appColorScheme")               private var colorSchemeString = "system"
+    @AppStorage("hasCompletedOnboarding")       private var hasCompletedOnboarding = true
+    @AppStorage("focusReminderIntervalMinutes") private var focusReminderIntervalMinutes = 60
+    @AppStorage("dynamicIslandEnabled")         private var dynamicIslandEnabled = true
 
     var body: some View {
         List {
@@ -29,6 +31,48 @@ struct SettingsView: View {
                 } label: {
                     Label("Hidden tasks", systemImage: "eye.slash")
                         .foregroundStyle(Color.textPrimary)
+                }
+            }
+
+            Section {
+                Toggle(isOn: $dynamicIslandEnabled) {
+                    Label("Dynamic Island", systemImage: "capsule.portrait")
+                        .foregroundStyle(Color.textPrimary)
+                }
+                .tint(Color.accentPrimary)
+
+                NavigationLink {
+                    TagsView()
+                } label: {
+                    HStack {
+                        Label("Tag emojis", systemImage: "face.smiling")
+                            .foregroundStyle(Color.textPrimary)
+                        Spacer()
+                        Text("Edit")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.textTertiary)
+                    }
+                }
+
+                HStack {
+                    Label("Stopwatch reminder", systemImage: "bell")
+                        .foregroundStyle(Color.textPrimary)
+                    Spacer()
+                    Picker("", selection: $focusReminderIntervalMinutes) {
+                        Text("Off").tag(0)
+                        Text("30m").tag(30)
+                        Text("1h").tag(60)
+                        Text("2h").tag(120)
+                    }
+                    .pickerStyle(.menu)
+                    .tint(Color.accentPrimary)
+                }
+            } header: {
+                Text("Focus")
+            } footer: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Active focus sessions appear in the Dynamic Island on supported devices (iPhone 14 Pro and later). The left side shows the tag's emoji, the right side shows the live timer. Long-press the island to expand.")
+                    Text("Stopwatch reminders fire at the chosen interval. Countdown sessions always alert at completion.")
                 }
             }
 

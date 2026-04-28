@@ -2,8 +2,11 @@
 //  StopConfirmView.swift
 //  Allot
 //
-//  Appears after tapping Stop. Auto-saves in 2 seconds if untouched.
-//  Session < 30 s → shows "Discard?" instead.
+//  Appears after tapping Stop. Stays open until the user picks an action —
+//  no auto-dismiss. Three layouts:
+//    • duration < 30 s   → discard prompt
+//    • unbound session   → attach prompt
+//    • bound session     → save prompt (hero duration · meta · actions)
 
 import SwiftUI
 import SwiftData
@@ -15,14 +18,21 @@ struct StopConfirmView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss)      private var dismiss
 
-    @State private var countdown = 2
     @State private var showDurationEdit = false
-    @State private var showAttachSheet = false
+    @State private var showAttachSheet  = false
     @State private var editedMinutes: Int
 
     private var duration: Int {
         guard let end = session.endAt else { return 0 }
         return max(0, Int(end.timeIntervalSince(session.startAt)) - session.totalPausedSeconds)
+    }
+
+    private var timeRangeLabel: String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        let start = f.string(from: session.startAt)
+        let end = session.endAt.map { f.string(from: $0) } ?? "—"
+        return "\(start) – \(end)"
     }
 
     init(session: TimeSession, onDone: @escaping () -> Void) {
@@ -46,13 +56,12 @@ struct StopConfirmView: View {
                 savePrompt
             }
         }
-        .background(Color.bgElevated)
-        .presentationDetents([.height(session.workTask == nil ? 220 : 200)])
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.bgElevated.ignoresSafeArea())
+        .presentationDetents([
+            .height(duration < 30 ? 240 : (session.workTask == nil ? 280 : 320))
+        ])
         .presentationDragIndicator(.hidden)
-        .task {
-            // Only auto-save bound sessions; unbound waits for explicit choice.
-            if session.workTask != nil { await autoSave() }
-        }
         .sheet(isPresented: $showDurationEdit) {
             HorizontalSliderView(
                 mode: .duration,
@@ -76,73 +85,165 @@ struct StopConfirmView: View {
     // MARK: Prompts
 
     private var savePrompt: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Recorded \(formatDuration(duration))")
-                    .font(.system(size: 18, weight: .semibold))
+        VStack(spacing: 0) {
+            // Hero: duration on left, time range on right — one row, balanced.
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(formatDuration(duration))
+                    .font(.system(size: 32, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.textPrimary)
-                if let task = session.workTask {
-                    Text("\"\(task.title)\"")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.textSecondary)
-                }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text("Recorded")
+                    .font(.system(size: 11, weight: .semibold))
+                    .kerning(0.6)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.textTertiary)
+                Spacer(minLength: 8)
+                Text(timeRangeLabel)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 24)
+            .padding(.top, 18)
+            .padding(.bottom, 18)
 
-            HStack(spacing: 8) {
+            sheetDivider
+
+            // Meta: task title on the left, tag chip pinned right.
+            if let task = session.workTask {
+                HStack(spacing: 10) {
+                    if let tag = task.tag, !tag.isSystem {
+                        Circle()
+                            .fill(Color.tagColor(tag.colorToken))
+                            .frame(width: 8, height: 8)
+                    }
+                    Text(task.title)
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if let tag = task.tag, !tag.isSystem {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.tagColor(tag.colorToken))
+                                .frame(width: 7, height: 7)
+                            Text(tag.name)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.tagColor(tag.colorToken))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            Color.tagColorSoft(tag.colorToken),
+                            in: RoundedRectangle(cornerRadius: Radius.xs)
+                        )
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 18)
+            }
+
+            // Spacer fills the slack so action buttons sit flush at the bottom
+            // of the sheet, no awkward gap below them.
+            Spacer(minLength: 0)
+
+            actionsBlock {
                 ActionButton(label: "Edit", systemImage: "pencil") {
                     showDurationEdit = true
                 }
-                ActionButton(label: "Mark done", systemImage: "checkmark") {
-                    session.workTask?.markCompleted(on: Date())
+                // "Save" — just stores the time entry; the task's checkbox
+                // stays where it was.
+                ActionButton(label: "Save", systemImage: "tray.and.arrow.down") {
                     save()
                 }
-                ActionButton(
-                    label: "Save (\(countdown))",
-                    systemImage: "checkmark.circle.fill",
-                    accent: true
-                ) { save() }
+                // "Done" — stores the time entry AND ticks the task complete
+                // for today (auto-checks the checkbox).
+                ActionButton(label: "Done", systemImage: "checkmark.circle.fill", accent: true) {
+                    saveAndMarkDone()
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
         }
     }
 
     private var attachPrompt: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Recorded \(formatDuration(duration))")
-                    .font(.system(size: 18, weight: .semibold))
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(formatDuration(duration))
+                    .font(.system(size: 32, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text("Unbound")
+                    .font(.system(size: 11, weight: .semibold))
+                    .kerning(0.6)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.textTertiary)
+                Spacer(minLength: 8)
+                Text(timeRangeLabel)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
+            .padding(.bottom, 18)
+
+            sheetDivider
+
+            HStack {
                 Text("Pick a task — every session needs one")
                     .font(.subheadline)
                     .foregroundStyle(Color.textSecondary)
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 24)
+            .padding(.vertical, 18)
 
-            HStack(spacing: 8) {
+            Spacer(minLength: 0)
+
+            actionsBlock {
                 ActionButton(label: "Discard", systemImage: "trash", destructive: true) {
                     discard()
                 }
-                ActionButton(
-                    label: "Choose task",
-                    systemImage: "link",
-                    accent: true
-                ) {
+                ActionButton(label: "Choose task", systemImage: "link", accent: true) {
                     showAttachSheet = true
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
         }
     }
 
     private var discardPrompt: some View {
-        VStack(spacing: 16) {
-            Text("That was under 30 seconds.")
-                .font(.subheadline)
-                .foregroundStyle(Color.textSecondary)
-            HStack(spacing: 12) {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(formatDuration(duration))
+                    .font(.system(size: 32, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.textPrimary)
+                Spacer(minLength: 8)
+                Text("Under 30 s")
+                    .font(.system(size: 11, weight: .semibold))
+                    .kerning(0.6)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.textTertiary)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
+            .padding(.bottom, 10)
+
+            HStack {
+                Text("That was under 30 seconds. Discard or save anyway?")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.textSecondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 18)
+
+            Spacer(minLength: 0)
+
+            actionsBlock {
                 ActionButton(label: "Discard", systemImage: "trash", destructive: true) {
                     modelContext.delete(session)
                     try? modelContext.save()
@@ -151,9 +252,25 @@ struct StopConfirmView: View {
                 }
                 ActionButton(label: "Save anyway", systemImage: "checkmark") { save() }
             }
-            .padding(.horizontal, 20)
         }
-        .padding(.vertical, 20)
+    }
+
+    // MARK: Layout building blocks
+
+    @ViewBuilder
+    private func actionsBlock<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 8) {
+            content()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 24)
+    }
+
+    private var sheetDivider: some View {
+        Rectangle()
+            .fill(Color.textPrimary.opacity(0.06))
+            .frame(height: 1)
     }
 
     // MARK: Actions
@@ -166,29 +283,30 @@ struct StopConfirmView: View {
         onDone()
     }
 
+    /// Save the time entry **without** marking the task as completed. Use when
+    /// the user did some work but the task is still in progress.
     private func save() {
-        if showDurationEdit {
-            // Apply edited duration
-            if let end = session.endAt {
-                let start = end.addingTimeInterval(-TimeInterval(editedMinutes * 60))
-                session.startAt = start
-                session.totalPausedSeconds = 0
-            }
-        }
-        // Any successful session counts as completion for that day.
+        applyEditedDurationIfNeeded()
+        try? modelContext.save()
+        dismiss()
+        onDone()
+    }
+
+    /// Save the time entry **and** flip the task's checkbox for that day.
+    /// Use when the user finished the task in this session.
+    private func saveAndMarkDone() {
+        applyEditedDurationIfNeeded()
         session.workTask?.markCompleted(on: session.startAt)
         try? modelContext.save()
         dismiss()
         onDone()
     }
 
-    private func autoSave() async {
-        for remaining in stride(from: 2, through: 1, by: -1) {
-            try? await Task.sleep(for: .seconds(1))
-            countdown = remaining - 1
-        }
-        try? await Task.sleep(for: .seconds(1))
-        save()
+    private func applyEditedDurationIfNeeded() {
+        guard showDurationEdit, let end = session.endAt else { return }
+        let start = end.addingTimeInterval(-TimeInterval(editedMinutes * 60))
+        session.startAt = start
+        session.totalPausedSeconds = 0
     }
 }
 

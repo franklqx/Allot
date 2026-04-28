@@ -22,8 +22,23 @@ struct FocusView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
+            // Timer is anchored to the true screen center (status bar +
+            // home indicator included) so it always reads as visually
+            // centered no matter how tall the chrome above/below is.
+            Text(formatClock(timerService.displaySeconds))
+                .font(.system(size: 92, weight: .light))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea()
+                .animation(nil, value: timerService.displaySeconds)
+
+            // Chrome stays inside the safe area so chevron, tag chip and
+            // bottom buttons don't collide with status bar / home indicator.
             VStack(spacing: 0) {
-                HStack {
+                // Top bar: chevron-down on the left, tag chip + title stacked
+                // below as the header. Sits flush at the top of the screen.
+                HStack(alignment: .top, spacing: 12) {
                     Button {
                         dismiss()
                     } label: {
@@ -35,34 +50,13 @@ struct FocusView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 8)
-
-                Spacer()
-
-                Text(formatClock(timerService.displaySeconds))
-                    .font(.system(size: 92, weight: .light))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .animation(nil, value: timerService.displaySeconds)
-
-                if let task = timerService.activeSession?.workTask {
-                    HStack(spacing: 6) {
-                        if let tag = task.tag, !tag.isSystem {
-                            TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 8)
-                        }
-                        Text(task.title)
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.8))
-                    }
-                    .padding(.top, 16)
-                } else {
-                    Text("Unbound session")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .padding(.top, 16)
+                .overlay(alignment: .top) {
+                    headerBlock
+                        .padding(.top, 4)
+                        .padding(.horizontal, 56)
                 }
 
                 Spacer()
@@ -82,7 +76,7 @@ struct FocusView: View {
                         stopTimer()
                     }
                 }
-                .padding(.bottom, 60)
+                .padding(.bottom, 36)
             }
         }
         .sheet(item: $stoppedSession) { session in
@@ -90,6 +84,7 @@ struct FocusView: View {
                 stoppedSession = nil
                 dismiss()
             }
+            .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $unboundSession) { session in
             UnboundSessionAttachSheet(session: session) {
@@ -104,6 +99,60 @@ struct FocusView: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+        }
+    }
+
+    @ViewBuilder
+    private var headerBlock: some View {
+        VStack(spacing: 12) {
+            if let task = timerService.activeSession?.workTask {
+                if let tag = task.tag, !tag.isSystem {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(Color.tagColor(tag.colorToken))
+                            .frame(width: 8, height: 8)
+                        Text(tag.name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.tagColor(tag.colorToken))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(
+                        Color.tagColor(tag.colorToken).opacity(0.18),
+                        in: Capsule()
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                Color.tagColor(tag.colorToken).opacity(0.35),
+                                lineWidth: 1
+                            )
+                    )
+                } else {
+                    Text("Untagged")
+                        .font(.system(size: 12, weight: .semibold))
+                        .kerning(0.6)
+                        .textCase(.uppercase)
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                Text(task.title)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            } else {
+                Text("Unbound")
+                    .font(.system(size: 12, weight: .semibold))
+                    .kerning(0.6)
+                    .textCase(.uppercase)
+                    .foregroundStyle(.white.opacity(0.4))
+                    .padding(.vertical, 7)
+                    .padding(.horizontal, 14)
+                    .background(.white.opacity(0.06), in: Capsule())
+                Text("Unbound session")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
         }
     }
 

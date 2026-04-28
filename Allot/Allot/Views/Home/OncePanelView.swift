@@ -26,10 +26,24 @@ struct OncePanelView: View {
             GrabberView()
 
             VStack(alignment: .leading, spacing: 0) {
-                // Title
-                Text(task.title)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(Color.textPrimary)
+                // Title row — task name on the left, worked duration on the
+                // far right at a size that visually pairs with (but doesn't
+                // overpower) the title.
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(task.title)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if workedSeconds > 0 {
+                        Text(formatDuration(workedSeconds))
+                            .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.textPrimary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .padding(.top, 12)
 
                 // Date · startTime
                 HStack(spacing: 6) {
@@ -62,20 +76,8 @@ struct OncePanelView: View {
                     .padding(.top, 10)
                 }
 
-                // Worked row
-                if workedSeconds > 0 {
-                    HStack {
-                        Text("Worked")
-                            .foregroundStyle(Color.textSecondary)
-                        Spacer()
-                        Text(formatDuration(workedSeconds))
-                            .font(.system(size: 18, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.textPrimary)
-                    }
-                    .padding(16)
-                    .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
+                TaskDaySessionsList(task: task, date: date)
                     .padding(.top, 16)
-                }
 
                 // Actions
                 VStack(spacing: 8) {
@@ -125,10 +127,10 @@ struct OncePanelView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Color.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 16)
+                    .padding(.top, 14)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 32)
+            .padding(.bottom, 14)
         }
         .background(Color.bgElevated)
         .confirmationDialog("Remove \"\(task.title)\"?", isPresented: $showRemoveConfirm, titleVisibility: .visible) {

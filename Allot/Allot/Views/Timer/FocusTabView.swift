@@ -71,6 +71,18 @@ struct FocusTabView: View {
             .navigationTitle("Focus")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if timerService.isRunning {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            dismissedSessionId = nil
+                            showImmersive = true
+                        } label: {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        .accessibilityLabel("Enter focus mode")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showHistory = true

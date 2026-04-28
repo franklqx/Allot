@@ -144,6 +144,27 @@ func formatClock(_ seconds: Int) -> String {
     return String(format: "%02d:%02d:%02d", h, m, s)
 }
 
+/// Two-unit-max duration. Always shows at most two parts so the string never
+/// wraps:
+///   - Has hours → `Xh Ym` (drops seconds, keeps minutes)
+///   - No hours, has minutes → `Xm Zs` (keeps seconds for sub-hour precision)
+///   - Sub-minute → `Zs`
+/// Use everywhere an aggregate row is shown (Allotted legend, stat cells, etc).
+/// For per-session detail views, prefer `formatDuration` to keep full seconds.
+func formatDurationCompact(_ seconds: Int) -> String {
+    guard seconds > 0 else { return "0m" }
+    let h = seconds / 3600
+    let m = (seconds % 3600) / 60
+    let s = seconds % 60
+    if h > 0 {
+        return m > 0 ? "\(h)h \(m)m" : "\(h)h"
+    }
+    if m > 0 {
+        return s > 0 ? "\(m)m \(s)s" : "\(m)m"
+    }
+    return "\(s)s"
+}
+
 /// Convert startTime (minutes from midnight) to display string, e.g. 420 → "07:00".
 func formatStartTime(_ minutesFromMidnight: Int) -> String {
     let h = minutesFromMidnight / 60

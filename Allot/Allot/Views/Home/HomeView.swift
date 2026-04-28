@@ -215,10 +215,18 @@ struct HomeView: View {
     // MARK: Actions
 
     private func panelHeight(for task: WorkTask) -> CGFloat {
-        var height: CGFloat = 220
-        if task.tag != nil && !(task.tag?.isSystem ?? true) { height += 40 }
-        if task.workedSeconds(on: selectedDate) > 0 { height += 70 }
-        return min(height + 40, 480)
+        // Header (title + date row) ~ 70 + actions block ~ 130 + bottom note 30
+        var height: CGFloat = 230
+        if task.tag != nil && !(task.tag?.isSystem ?? true) { height += 36 }
+        let cal = Calendar.current
+        let dayCount = task.sessions.filter {
+            $0.endAt != nil && cal.isDate($0.startAt, inSameDayAs: selectedDate)
+        }.count
+        if dayCount > 0 {
+            // Section header (28) + per-row (44) capped at 4 rows of visible space
+            height += 28 + 44 * CGFloat(min(dayCount, 4))
+        }
+        return min(height, 600)
     }
 
     private func openDetail(_ task: WorkTask) {

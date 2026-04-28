@@ -17,6 +17,7 @@ struct FocusHistoryView: View {
     private var sessions: [TimeSession]
 
     @State private var showJumpToTop = false
+    @State private var sessionPendingDelete: TimeSession?
 
     private static let topAnchorID = "history-top"
 
@@ -34,7 +35,16 @@ struct FocusHistoryView: View {
         let cal = Calendar.current
         let dict = Dictionary(grouping: completedSessions) { cal.startOfDay(for: $0.startAt) }
         return dict.keys.sorted(by: >).map { day in
-            DayGroup(date: day, items: dict[day]!.sorted { $0.startAt > $1.startAt })
+            // Within each day: sessions without a real start time (quickLog /
+            // manualEntry) float to the top, then live-timer sessions follow
+            // in chronological order.
+            let items = dict[day]!.sorted { a, b in
+                let aLive = a.source == .liveTimer
+                let bLive = b.source == .liveTimer
+                if aLive != bLive { return !aLive }
+                return a.startAt < b.startAt
+            }
+            return DayGroup(date: day, items: items)
         }
     }
 
@@ -49,6 +59,36 @@ struct FocusHistoryView: View {
         .navigationTitle("History")
         .navigationBarTitleDisplayMode(.inline)
         .background(Color.bgPrimary)
+        .alert(
+            deletePromptTitle,
+            isPresented: Binding(
+                get: { sessionPendingDelete != nil },
+                set: { if !$0 { sessionPendingDelete = nil } }
+            ),
+            presenting: sessionPendingDelete
+        ) { session in
+            Button("Cancel", role: .cancel) {
+                sessionPendingDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                performDelete(session)
+            }
+        } message: { _ in
+            Text("This can't be undone.")
+        }
+    }
+
+    private var deletePromptTitle: String {
+        guard let s = sessionPendingDelete else { return "Delete session?" }
+        let title = s.workTask?.title ?? "Untagged session"
+        return "Delete \"\(title)\"?"
+    }
+
+    private func performDelete(_ session: TimeSession) {
+        modelContext.delete(session)
+        try? modelContext.save()
+        sessionPendingDelete = nil
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     private var listContent: some View {
@@ -69,8 +109,7 @@ struct FocusHistoryView: View {
                                 .listRowInsets(EdgeInsets())
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button(role: .destructive) {
-                                        modelContext.delete(session)
-                                        try? modelContext.save()
+                                        sessionPendingDelete = session
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
@@ -190,12 +229,19 @@ private struct HistoryRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(startLabel)
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.textSecondary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(width: 48, alignment: .leading)
+            if session.source != .liveTimer {
+                // No real start time (quickLog / manualEntry) — leave the
+                // column empty so the row reads as "no time recorded" without
+                // faking a midnight value.
+                Color.clear.frame(width: 48, height: 1)
+            } else {
+                Text(startLabel)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: 48, alignment: .leading)
+            }
 
             if let task = session.workTask {
                 if let tag = task.tag, !tag.isSystem {
@@ -225,3 +271,4 @@ private struct HistoryRow: View {
         .padding(.vertical, 7)
     }
 }
+

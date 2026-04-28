@@ -17,6 +17,7 @@ struct RecurringPanelView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var showRemoveConfirm = false
+    @State private var calendarSelectedDate: Date = Calendar.current.startOfDay(for: Date())
 
     private var tagColor: Color { task.tag.map { Color.tagColor($0.colorToken) } ?? Color.tagStone }
 
@@ -116,9 +117,9 @@ struct RecurringPanelView: View {
 
                     // 3 core stats
                     HStack(spacing: 0) {
-                        StatCell(value: formatDuration(task.workedSecondsThisWeek()), label: "This week")
-                        StatCell(value: formatDuration(task.workedSecondsThisMonth()), label: "This month")
-                        StatCell(value: formatDuration(task.workedSecondsTotal), label: "Total")
+                        StatCell(value: formatDurationCompact(task.workedSecondsThisWeek()), label: "This week")
+                        StatCell(value: formatDurationCompact(task.workedSecondsThisMonth()), label: "This month")
+                        StatCell(value: formatDurationCompact(task.workedSecondsTotal), label: "Total")
                     }
                     .padding(.vertical, 20)
                     .padding(.horizontal, 8)
@@ -126,8 +127,23 @@ struct RecurringPanelView: View {
 
                     Divider().padding(.vertical, 24)
 
-                    // Dot calendar
-                    DotCalendarView(task: task, accentColor: tagColor)
+                    // Dot calendar — placed BEFORE the session list so its
+                    // position is anchored by the (fixed-height) content above
+                    // it. Tapping a different dot only changes the session
+                    // list below; the calendar (and the selected ring) never
+                    // shifts on screen.
+                    DotCalendarView(
+                        task: task,
+                        accentColor: tagColor,
+                        selectedDate: $calendarSelectedDate
+                    )
+
+                    TaskDaySessionsList(
+                        task: task,
+                        date: calendarSelectedDate,
+                        sectionTitle: dayTitle(for: calendarSelectedDate)
+                    )
+                    .padding(.top, 20)
 
                     Divider().padding(.vertical, 24)
 
@@ -166,6 +182,13 @@ struct RecurringPanelView: View {
         dismiss()
     }
 
+    private func dayTitle(for date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "Today" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
     private var shareWithinTagLabel: String {
         guard let tag = task.tag else { return "" }
         let tagTotal = tag.tasks.reduce(0) { $0 + $1.workedSecondsTotal }
@@ -181,23 +204,28 @@ private struct StatCell: View {
     let value: String
     let label: String
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             Text(value)
-                .font(.system(size: 20, weight: .medium, design: .monospaced))
+                .font(.system(size: 22, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Color.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(label)
                 .font(.system(size: 11, weight: .regular))
                 .kerning(0.3)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.textTertiary)
+                .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
+        .padding(.horizontal, 6)
     }
 }
 
 private struct DotCalendarView: View {
     let task: WorkTask
     let accentColor: Color
+    @Binding var selectedDate: Date
 
     private let cal = Calendar.current
     private var today: Date { Date() }
@@ -208,7 +236,8 @@ private struct DotCalendarView: View {
         let month = components.month ?? 1
         let sessionDays = task.sessionDays(year: year, month: month)
         let daysInMonth = cal.range(of: .day, in: .month, for: today)?.count ?? 30
-        let firstWeekday = firstWeekdayOfMonth(year: year, month: month)  // 0=Mon offset
+        let firstWeekday = firstWeekdayOfMonth(year: year, month: month)  // 0=Sun offset
+        let selectedDay = selectedDayIfInMonth(year: year, month: month)
 
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -242,12 +271,21 @@ private struct DotCalendarView: View {
                     ForEach(0..<7) { col in
                         let cellIndex = row * 7 + col
                         let day = cellIndex - firstWeekday + 1
+                        let inMonth = day >= 1 && day <= daysInMonth
+                        let hasSession = inMonth && sessionDays.contains(day)
                         DotCell(
                             day: day,
-                            inMonth: day >= 1 && day <= daysInMonth,
-                            hasSession: sessionDays.contains(day),
+                            inMonth: inMonth,
+                            hasSession: hasSession,
                             isToday: isToday(day: day, year: year, month: month),
-                            accentColor: accentColor
+                            isSelected: inMonth && day == selectedDay,
+                            accentColor: accentColor,
+                            onTap: hasSession ? {
+                                guard let date = cal.date(from: DateComponents(year: year, month: month, day: day))
+                                else { return }
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                selectedDate = cal.startOfDay(for: date)
+                            } : nil
                         )
                         .frame(maxWidth: .infinity)
                     }
@@ -267,6 +305,12 @@ private struct DotCalendarView: View {
         let c = cal.dateComponents([.year, .month, .day], from: today)
         return c.year == year && c.month == month && c.day == day
     }
+
+    private func selectedDayIfInMonth(year: Int, month: Int) -> Int? {
+        let c = cal.dateComponents([.year, .month, .day], from: selectedDate)
+        guard c.year == year, c.month == month else { return nil }
+        return c.day
+    }
 }
 
 private struct DotCell: View {
@@ -274,26 +318,39 @@ private struct DotCell: View {
     let inMonth: Bool
     let hasSession: Bool
     let isToday: Bool
+    let isSelected: Bool
     let accentColor: Color
+    let onTap: (() -> Void)?
 
     var body: some View {
-        ZStack {
-            if inMonth {
-                if hasSession {
-                    Circle().fill(accentColor).frame(width: 10, height: 10)
-                } else {
-                    Circle()
-                        .strokeBorder(Color.textPrimary.opacity(0.12), lineWidth: 1)
-                        .frame(width: 10, height: 10)
-                }
-                if isToday {
-                    Circle()
-                        .strokeBorder(Color.accentPrimary, lineWidth: 1.5)
-                        .frame(width: 16, height: 16)
+        Button(action: { onTap?() }) {
+            ZStack {
+                if inMonth {
+                    if hasSession {
+                        Circle().fill(accentColor).frame(width: 10, height: 10)
+                    } else {
+                        Circle()
+                            .strokeBorder(Color.textPrimary.opacity(0.12), lineWidth: 1)
+                            .frame(width: 10, height: 10)
+                    }
+                    // Selection ring sits outside the today ring so they can
+                    // compose on the same dot without conflict.
+                    if isSelected {
+                        Circle()
+                            .strokeBorder(accentColor, lineWidth: 1.5)
+                            .frame(width: 20, height: 20)
+                    } else if isToday {
+                        Circle()
+                            .strokeBorder(Color.accentPrimary, lineWidth: 1.5)
+                            .frame(width: 16, height: 16)
+                    }
                 }
             }
+            .frame(height: 22)
+            .contentShape(Rectangle())
         }
-        .frame(height: 20)
+        .buttonStyle(.plain)
+        .disabled(onTap == nil)
     }
 }
 
