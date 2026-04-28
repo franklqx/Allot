@@ -235,7 +235,13 @@ struct AllottedView: View {
     }
 
     private func paretoCap(_ items: [AllotStat]) -> [AllotStat] {
-        let sorted = items.sorted { $0.seconds > $1.seconds }
+        // Stable sort: ties broken by name then id so equal-duration items
+        // never shuffle when stats recompute on tap / expand interactions.
+        let sorted = items.sorted { a, b in
+            if a.seconds != b.seconds { return a.seconds > b.seconds }
+            if a.name != b.name { return a.name < b.name }
+            return a.id.uuidString < b.id.uuidString
+        }
         let total = sorted.reduce(0) { $0 + $1.seconds }
         guard total > 0 else { return [] }
 
@@ -621,7 +627,13 @@ struct AllottedView: View {
             if let ex = dict[task.id] { dict[task.id] = (ex.0, ex.1 + dur) }
             else { dict[task.id] = (task, dur) }
         }
-        return dict.values.map { ($0.0, $0.1) }.sorted { $0.1 > $1.1 }
+        return dict.values
+            .map { ($0.0, $0.1) }
+            .sorted { a, b in
+                if a.1 != b.1 { return a.1 > b.1 }
+                if a.0.title != b.0.title { return a.0.title < b.0.title }
+                return a.0.id.uuidString < b.0.id.uuidString
+            }
     }
 
     @ViewBuilder
