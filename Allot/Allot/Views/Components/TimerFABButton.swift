@@ -27,10 +27,28 @@ struct TimerFABButton: View {
                 .foregroundStyle(Color.textPrimary)
             }
             .frame(width: 50, height: 50)
-            .glassEffect(.regular.interactive(), in: .circle)
+            .modifier(TimerFABSurfaceModifier())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isRunning ? "Timer running — tap to open" : "Add task")
+    }
+}
+
+private struct TimerFABSurfaceModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            content
+                .background(Color.bgElevated, in: Circle())
+                .overlay {
+                    Circle()
+                        .stroke(Color.textPrimary.opacity(0.08), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
+        }
     }
 }
 

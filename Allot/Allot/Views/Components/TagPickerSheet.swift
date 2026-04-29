@@ -7,10 +7,12 @@ import SwiftData
 
 struct TagPickerSheet: View {
     @Binding var selectedTag: Tag?
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Tag.createdAt) private var tags: [Tag]
 
     @State private var showCreate = false
+    @State private var pendingDelete: Tag?
 
     var body: some View {
         NavigationStack {
@@ -50,6 +52,13 @@ struct TagPickerSheet: View {
                             TagRow(tag: tag, isSelected: selectedTag?.id == tag.id)
                         }
                         .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                pendingDelete = tag
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
                 }
             }
@@ -66,8 +75,39 @@ struct TagPickerSheet: View {
                     .presentationDetents([.height(400)])
                     .presentationBackground(Color.bgPrimary)
             }
+            .confirmationDialog(
+                deleteTitle,
+                isPresented: Binding(
+                    get: { pendingDelete != nil },
+                    set: { if !$0 { pendingDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive, action: deletePendingTag)
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
+            } message: {
+                Text("Tasks stay untagged.")
+            }
         }
         .presentationDetents([.medium])
+    }
+
+    private var deleteTitle: String {
+        guard let pendingDelete else { return "Delete tag" }
+        return "Delete \"\(pendingDelete.name)\""
+    }
+
+    private func deletePendingTag() {
+        guard let tag = pendingDelete else { return }
+        for task in tag.tasks {
+            task.tag = nil
+        }
+        if selectedTag?.id == tag.id {
+            selectedTag = nil
+        }
+        modelContext.delete(tag)
+        try? modelContext.save()
+        pendingDelete = nil
     }
 }
 

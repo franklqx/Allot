@@ -16,12 +16,16 @@ struct TaskRowView: View {
     let task: WorkTask
     let date: Date
     let isRunning: Bool
-    let elapsedSeconds: Int
+    let timerSeconds: Int
+    let isCountingDown: Bool
     let onIconTap: () -> Void
     let onRowTap: () -> Void
 
     private var isCompleted: Bool { task.isCompleted(on: date) }
     private var workedSeconds: Int { task.workedSeconds(on: date) }
+    private var countdownSeconds: Int? {
+        task.timerMode == .countdown ? task.countdownDuration : nil
+    }
 
     /// Box color. Even when completed we keep the original tag color so the
     /// row still reads as that tag — the gray checkmark inside is the
@@ -38,7 +42,6 @@ struct TaskRowView: View {
                     type: task.type,
                     isCompleted: isCompleted,
                     isRunning: isRunning,
-                    elapsedSeconds: elapsedSeconds,
                     color: iconColor
                 )
             }
@@ -54,10 +57,23 @@ struct TaskRowView: View {
                             .foregroundStyle(isCompleted ? Color.textTertiary : Color.textPrimary)
                             .lineLimit(1)
 
-                        if workedSeconds > 0 {
-                            Text(formatDuration(workedSeconds))
-                                .font(.system(size: 12, weight: .regular, design: .monospaced))
-                                .foregroundStyle(Color.textTertiary)
+                        if workedSeconds > 0 || countdownSeconds != nil {
+                            HStack(spacing: 8) {
+                                if workedSeconds > 0 {
+                                    Text(formatDuration(workedSeconds))
+                                        .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                        .foregroundStyle(Color.textTertiary)
+                                }
+                                if let countdownSeconds {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "hourglass")
+                                            .font(.system(size: 10, weight: .semibold))
+                                        Text(formatDuration(countdownSeconds))
+                                            .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                    }
+                                    .foregroundStyle(Color.textTertiary)
+                                }
+                            }
                         }
                     }
 
@@ -84,12 +100,19 @@ struct TaskRowView: View {
             // Live ticker takes the same slot as the planned start time so
             // running tasks read as "this is the time on this row" rather than
             // hiding the icon behind a number.
-            Text(compactClock(elapsedSeconds))
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.textPrimary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .animation(nil, value: elapsedSeconds)
+            HStack(spacing: 4) {
+                if isCountingDown {
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.textSecondary)
+                }
+                Text(compactClock(timerSeconds))
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .animation(nil, value: timerSeconds)
+            }
         } else if let startTime = task.startTime {
             Text(formatStartTime(startTime))
                 .font(.system(size: 14, weight: .regular, design: .monospaced))
@@ -111,7 +134,6 @@ private struct TaskIconView: View {
     let type: TaskType
     let isCompleted: Bool
     let isRunning: Bool
-    let elapsedSeconds: Int
     let color: Color
 
     var body: some View {

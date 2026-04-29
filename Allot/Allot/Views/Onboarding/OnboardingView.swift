@@ -76,7 +76,7 @@ struct OnboardingView: View {
                 } label: {
                     Text(page == pages.count - 1 ? "Get Started" : "Continue")
                         .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.bgPrimary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(Color.accentPrimary, in: Capsule())

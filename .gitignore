@@ -8,6 +8,8 @@
 
 # gstack local logs
 **/.gstack/
+.claude/worktrees/
 
 # Nested repo backup (see README if you restore history)
 Allot/.git.nested.backup/
+.gstack/

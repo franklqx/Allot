@@ -5,7 +5,7 @@
 //  Dynamic Island + lock-screen UI for the active focus session.
 //
 //  Compact (default Dynamic Island state):
-//    leading  → tag emoji
+//    leading  → stable mode icon
 //    trailing → live timer (count up or count down) driven entirely by
 //               Text(timerInterval:) so the OS animates digits without
 //               needing per-second activity updates.
@@ -39,9 +39,9 @@ struct FocusActivityWidget: Widget {
                         Text(context.state.emoji.isEmpty ? "⏱" : context.state.emoji)
                             .font(.system(size: 28))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(context.state.tagName)
+                            Text(context.state.countdownFinished ? "Time's up" : context.state.tagName)
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color.tagColor(context.state.tagColorToken))
+                                .foregroundStyle(context.state.countdownFinished ? Color.textPrimary : Color.tagColor(context.state.tagColorToken))
                                 .lineLimit(1)
                             if !context.state.taskTitle.isEmpty {
                                 Text(context.state.taskTitle)
@@ -73,7 +73,11 @@ struct FocusActivityWidget: Widget {
                             .font(.system(size: 12))
                             .foregroundStyle(Color.textSecondary)
                         Spacer()
-                        if context.state.isPaused {
+                        if context.state.countdownFinished {
+                            Label("Time's up", systemImage: "bell.badge.fill")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.textPrimary)
+                        } else if context.state.isPaused {
                             Label("Paused", systemImage: "pause.fill")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(Color.textSecondary)
@@ -88,8 +92,10 @@ struct FocusActivityWidget: Widget {
                     .padding(.top, 2)
                 }
             } compactLeading: {
-                Text(context.state.emoji.isEmpty ? "⏱" : context.state.emoji)
-                    .font(.system(size: 12))
+                compactIcon(for: context.state)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.tagColor(context.state.tagColorToken))
+                    .frame(width: 18, height: 18)
             } compactTrailing: {
                 // CRITICAL — `Text(timerInterval:)` makes iOS reserve space
                 // for the widest possible representation of the range (e.g.
@@ -108,10 +114,24 @@ struct FocusActivityWidget: Widget {
                     .frame(width: 54, alignment: .trailing)
                     .foregroundStyle(context.state.isPaused ? Color.white.opacity(0.6) : Color.white)
             } minimal: {
-                Text(context.state.emoji.isEmpty ? "⏱" : context.state.emoji)
-                    .font(.system(size: 12))
+                compactIcon(for: context.state)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.tagColor(context.state.tagColorToken))
             }
             .keylineTint(Color.tagColor(context.state.tagColorToken))
+        }
+    }
+
+    @ViewBuilder
+    private func compactIcon(for state: FocusActivityAttributes.ContentState) -> some View {
+        if state.countdownFinished {
+            Image(systemName: "bell.fill")
+        } else if state.isPaused {
+            Image(systemName: "pause.fill")
+        } else if state.countdownSeconds != nil {
+            Image(systemName: "hourglass")
+        } else {
+            Image(systemName: "stopwatch")
         }
     }
 
@@ -120,7 +140,9 @@ struct FocusActivityWidget: Widget {
     /// the OS animates a count-down to 00:00.
     @ViewBuilder
     private func timerText(for state: FocusActivityAttributes.ContentState, big: Bool) -> some View {
-        if state.isPaused {
+        if state.countdownFinished {
+            Text("0:00")
+        } else if state.isPaused {
             // While paused, freeze on the elapsed-at-pause value.
             let frozen = max(0, Int(Date().timeIntervalSince(state.startAt)) - state.pausedSeconds)
             if let target = state.countdownSeconds {
@@ -182,11 +204,11 @@ private struct LockScreenView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(Color.tagColor(state.tagColorToken))
+                        .fill(state.countdownFinished ? Color.textPrimary : Color.tagColor(state.tagColorToken))
                         .frame(width: 8, height: 8)
-                    Text(state.tagName)
+                    Text(state.countdownFinished ? "Time's up" : state.tagName)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.tagColor(state.tagColorToken))
+                        .foregroundStyle(state.countdownFinished ? Color.textPrimary : Color.tagColor(state.tagColorToken))
                         .lineLimit(1)
                 }
                 if !state.taskTitle.isEmpty {
@@ -197,17 +219,19 @@ private struct LockScreenView: View {
                 }
                 metaRow
             }
-
-            Spacer(minLength: 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             timer
                 .font(.system(size: 28, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                .multilineTextAlignment(.trailing)
                 .foregroundStyle(state.isPaused ? Color.textSecondary : Color.textPrimary)
+                .frame(width: 118, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
         .padding(.vertical, 14)
     }
 
@@ -230,7 +254,15 @@ private struct LockScreenView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Color.textSecondary)
 
-            if state.isPaused {
+            if state.countdownFinished {
+                Text("·")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.textTertiary)
+                Label("Done", systemImage: "bell.badge.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+            } else if state.isPaused {
                 Text("·")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.textTertiary)
@@ -251,7 +283,9 @@ private struct LockScreenView: View {
 
     @ViewBuilder
     private var timer: some View {
-        if state.isPaused {
+        if state.countdownFinished {
+            Text("0:00")
+        } else if state.isPaused {
             let frozen = max(0, Int(Date().timeIntervalSince(state.startAt)) - state.pausedSeconds)
             if let target = state.countdownSeconds {
                 Text(formatClock(max(0, target - frozen)))
@@ -288,38 +322,45 @@ private extension FocusActivityAttributes.ContentState {
             pausedSeconds: 0,
             isPaused: false,
             countdownSeconds: nil,
+            countdownFinished: false,
             todayTotalSeconds: 8_220,
             stopwatchCapHours: 1
         )
     }
 }
 
-#Preview("Lock — Light (glass)", traits: .sizeThatFitsLayout) {
-    ZStack {
-        // Stand-in for the wallpaper behind the activity banner.
-        LinearGradient(
-            colors: [.blue.opacity(0.7), .purple.opacity(0.4), .pink.opacity(0.3)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .frame(height: 220)
+struct FocusActivityWidget_Previews: PreviewProvider {
+    static var previews: some View {
+        Group {
+            ZStack {
+                // Stand-in for the wallpaper behind the activity banner.
+                LinearGradient(
+                    colors: [.blue.opacity(0.7), .purple.opacity(0.4), .pink.opacity(0.3)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .frame(height: 220)
 
-        LockScreenView(state: .previewSample)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .padding(.horizontal, 16)
-            .preferredColorScheme(.light)
-    }
-}
+                LockScreenView(state: .previewSample)
+                    .background(.regularMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .padding(.horizontal, 16)
+                    .preferredColorScheme(.light)
+            }
+            .previewLayout(.sizeThatFits)
+            .previewDisplayName("Lock - Light (glass)")
 
-#Preview("Lock — Dark (black)", traits: .sizeThatFitsLayout) {
-    ZStack {
-        Color(white: 0.06)
-            .frame(height: 220)
+            ZStack {
+                Color(white: 0.06)
+                    .frame(height: 220)
 
-        LockScreenView(state: .previewSample)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .padding(.horizontal, 16)
-            .preferredColorScheme(.dark)
+                LockScreenView(state: .previewSample)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .padding(.horizontal, 16)
+                    .preferredColorScheme(.dark)
+            }
+            .previewLayout(.sizeThatFits)
+            .previewDisplayName("Lock - Dark (black)")
+        }
     }
 }

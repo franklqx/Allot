@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var showNewTask = false
     @State private var recoverySentinel: ActiveSessionSentinel?
     @State private var homeSelectedDate: Date = Date()
+    @State private var showCountdownComplete = false
 
     /// Custom selection binding — when user taps the .add (FAB) tab we run
     /// `handleAddTap()` but never write `.add` into `selectedTab`, so the
@@ -66,7 +67,44 @@ struct ContentView: View {
             NewTaskView(prefilledDate: homeSelectedDate)
                 .presentationDetents([.large])
         }
+        .sheet(isPresented: $showCountdownComplete) {
+            CountdownCompleteSheet(
+                taskTitle: timerService.activeSession?.workTask?.title ?? "Countdown",
+                onEnd: {
+                    timerService.stop(in: modelContext)
+                    showCountdownComplete = false
+                },
+                onAddFive: {
+                    timerService.extendCountdown(by: 5 * 60)
+                    selectedTab = .focus
+                    showCountdownComplete = false
+                },
+                onAddFifteen: {
+                    timerService.extendCountdown(by: 15 * 60)
+                    selectedTab = .focus
+                    showCountdownComplete = false
+                },
+                onContinue: {
+                    timerService.continueCountdownAsStopwatch()
+                    selectedTab = .focus
+                    showCountdownComplete = false
+                }
+            )
+            .presentationDetents([.height(360)])
+            .presentationDragIndicator(.hidden)
+            .presentationBackground(Color.bgElevated)
+        }
         .onAppear(perform: checkKillRecovery)
+        .onChange(of: timerService.countdownCompleted) { _, completed in
+            if completed {
+                showCountdownComplete = true
+            }
+        }
+        .onChange(of: timerService.isRunning) { _, isRunning in
+            if !isRunning {
+                showCountdownComplete = false
+            }
+        }
         .alert("Timer was running", isPresented: Binding(
             get: { recoverySentinel != nil },
             set: { if !$0 { recoverySentinel = nil } }
@@ -114,8 +152,10 @@ struct ContentView: View {
             selectedTab = .focus
             return
         }
-        task.timerMode = .stopwatch
-        timerService.start(task: task, in: modelContext)
+        let countdownSeconds = task.timerMode == .countdown
+            ? max(1, task.countdownDuration)
+            : nil
+        timerService.start(task: task, countdownSeconds: countdownSeconds, in: modelContext)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         // Snap directly to focus — animating the tab switch creates a fade
         // that combines unpleasantly with the immersive cover presentation.
@@ -126,6 +166,81 @@ struct ContentView: View {
         guard !timerService.isRunning,
               let sentinel = timerService.killRecoverySentinel else { return }
         recoverySentinel = sentinel
+    }
+}
+
+private struct CountdownCompleteSheet: View {
+    let taskTitle: String
+    let onEnd: () -> Void
+    let onAddFive: () -> Void
+    let onAddFifteen: () -> Void
+    let onContinue: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            GrabberView()
+
+            VStack(alignment: .leading, spacing: 14) {
+                Label("Time's up", systemImage: "hourglass")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(Color.textPrimary)
+
+                Text(taskTitle)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+                    .lineLimit(1)
+
+                Button(action: onContinue) {
+                    Label("Continue", systemImage: "play.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.bgPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.textPrimary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+
+                HStack(spacing: 10) {
+                    Button(action: onAddFive) {
+                        Label("5 min", systemImage: "plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(CountdownActionStyle())
+
+                    Button(action: onAddFifteen) {
+                        Label("15 min", systemImage: "plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(CountdownActionStyle())
+                }
+
+                Button(role: .destructive, action: onEnd) {
+                    Label("End", systemImage: "stop.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.bgSecondary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 20)
+        }
+    }
+}
+
+private struct CountdownActionStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(Color.textPrimary)
+            .padding(.vertical, 13)
+            .background(
+                Color.bgSecondary.opacity(configuration.isPressed ? 0.7 : 1),
+                in: Capsule()
+            )
     }
 }
 

@@ -37,6 +37,7 @@ struct ActiveSessionSentinel: Codable {
     /// When set, the session is a countdown of this many seconds.
     /// `displaySeconds` then returns the remaining time instead of the elapsed.
     private(set) var countdownTarget: Int?
+    private(set) var countdownCompleted = false
 
     /// What the running UI should show. Counts up for stopwatch, counts down
     /// for countdown sessions (clamped at 0).
@@ -52,17 +53,22 @@ struct ActiveSessionSentinel: Codable {
     private var ticker: Timer?
     private var pauseStart: Date?
     private var accumulatedPausedSeconds = 0
+    private let systemIntegrationsEnabled: Bool
 
     private static let sentinelKey = "activeSession"
     private static let reminderIntervalKey = "focusReminderIntervalMinutes"
     private static let dynamicIslandEnabledKey = "dynamicIslandEnabled"
 
-    init() {
+    init(systemIntegrationsEnabled: Bool = true) {
+        self.systemIntegrationsEnabled = systemIntegrationsEnabled
+
         // App cold start: the system may still hold Live Activities from a
         // previous launch (foreground crash, force-quit, OS bug). End them
         // unconditionally so we don't end up with two stacked activities once
         // the user starts a new session.
-        Task { await Self.endAllActivitiesAtLaunch() }
+        if systemIntegrationsEnabled {
+            Task { await Self.endAllActivitiesAtLaunch() }
+        }
     }
 
     private static func endAllActivitiesAtLaunch() async {
@@ -94,25 +100,28 @@ struct ActiveSessionSentinel: Codable {
         accumulatedPausedSeconds = 0
         pauseStart = nil
         countdownTarget = countdownSeconds
+        countdownCompleted = false
         isRunning = true
         isPaused = false
 
         writeSentinel(taskId: task.id, taskTitle: task.title, startAt: now)
         startTicker()
 
-        FocusNotificationScheduler.requestAuthorizationIfNeeded()
-        FocusNotificationScheduler.schedule(
-            taskTitle: task.title,
-            countdownSeconds: countdownSeconds,
-            reminderIntervalMinutes: reminderIntervalMinutesPreference
-        )
-        startLiveActivity(
-            sessionId: session.id,
-            task: task,
-            startAt: now,
-            countdownSeconds: countdownSeconds,
-            todayTotalSeconds: todayTotalSeconds(for: task, in: context)
-        )
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.requestAuthorizationIfNeeded()
+            FocusNotificationScheduler.schedule(
+                taskTitle: task.title,
+                countdownSeconds: countdownSeconds,
+                reminderIntervalMinutes: reminderIntervalMinutesPreference
+            )
+            startLiveActivity(
+                sessionId: session.id,
+                task: task,
+                startAt: now,
+                countdownSeconds: countdownSeconds,
+                todayTotalSeconds: todayTotalSeconds(for: task, in: context)
+            )
+        }
     }
 
     func startUnbound(countdownSeconds: Int? = nil, in context: ModelContext) {
@@ -128,25 +137,28 @@ struct ActiveSessionSentinel: Codable {
         accumulatedPausedSeconds = 0
         pauseStart = nil
         countdownTarget = countdownSeconds
+        countdownCompleted = false
         isRunning = true
         isPaused = false
 
         writeSentinel(taskId: UUID(), taskTitle: "Unbound", startAt: now)
         startTicker()
 
-        FocusNotificationScheduler.requestAuthorizationIfNeeded()
-        FocusNotificationScheduler.schedule(
-            taskTitle: "",
-            countdownSeconds: countdownSeconds,
-            reminderIntervalMinutes: reminderIntervalMinutesPreference
-        )
-        startLiveActivity(
-            sessionId: session.id,
-            task: nil,
-            startAt: now,
-            countdownSeconds: countdownSeconds,
-            todayTotalSeconds: 0
-        )
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.requestAuthorizationIfNeeded()
+            FocusNotificationScheduler.schedule(
+                taskTitle: "",
+                countdownSeconds: countdownSeconds,
+                reminderIntervalMinutes: reminderIntervalMinutesPreference
+            )
+            startLiveActivity(
+                sessionId: session.id,
+                task: nil,
+                startAt: now,
+                countdownSeconds: countdownSeconds,
+                todayTotalSeconds: 0
+            )
+        }
     }
 
     func pause() {
@@ -158,8 +170,10 @@ struct ActiveSessionSentinel: Codable {
 
         // Cancel pending notifications — we'll reschedule on resume with the
         // post-pause anchor so reminder cadence remains correct.
-        FocusNotificationScheduler.cancelAll()
-        updateLiveActivityState()
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.cancelAll()
+            updateLiveActivityState()
+        }
     }
 
     func resume() {
@@ -171,13 +185,54 @@ struct ActiveSessionSentinel: Codable {
         isPaused = false
         startTicker()
 
-        FocusNotificationScheduler.schedule(
-            taskTitle: activeSession?.workTask?.title ?? "",
-            countdownSeconds: countdownTarget,
-            reminderIntervalMinutes: reminderIntervalMinutesPreference,
-            elapsedSecondsAtStart: elapsedSeconds
-        )
-        updateLiveActivityState()
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.schedule(
+                taskTitle: activeSession?.workTask?.title ?? "",
+                countdownSeconds: countdownTarget,
+                reminderIntervalMinutes: reminderIntervalMinutesPreference,
+                elapsedSecondsAtStart: elapsedSeconds
+            )
+            updateLiveActivityState()
+        }
+    }
+
+    func extendCountdown(by seconds: Int) {
+        guard isRunning, let target = countdownTarget else { return }
+        countdownTarget = target + max(1, seconds)
+        countdownCompleted = false
+
+        if !isPaused, ticker == nil {
+            startTicker()
+        }
+
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.schedule(
+                taskTitle: activeSession?.workTask?.title ?? "",
+                countdownSeconds: countdownTarget,
+                reminderIntervalMinutes: reminderIntervalMinutesPreference,
+                elapsedSecondsAtStart: elapsedSeconds
+            )
+            updateLiveActivityState()
+        }
+    }
+
+    func continueCountdownAsStopwatch() {
+        guard isRunning, countdownTarget != nil else { return }
+        countdownTarget = nil
+        countdownCompleted = false
+        if elapsedSeconds >= 3300 {
+            stopwatchCapHours = 24
+        }
+
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.schedule(
+                taskTitle: activeSession?.workTask?.title ?? "",
+                countdownSeconds: nil,
+                reminderIntervalMinutes: reminderIntervalMinutesPreference,
+                elapsedSecondsAtStart: elapsedSeconds
+            )
+            updateLiveActivityState()
+        }
     }
 
     func stop(in context: ModelContext) {
@@ -220,8 +275,10 @@ struct ActiveSessionSentinel: Codable {
         clearState()
         clearSentinel()
 
-        FocusNotificationScheduler.cancelAll()
-        endLiveActivity()
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.cancelAll()
+            endLiveActivity()
+        }
     }
 
     // MARK: Kill Recovery
@@ -248,14 +305,18 @@ struct ActiveSessionSentinel: Codable {
         try? context.save()
         clearSentinel()
 
-        FocusNotificationScheduler.cancelAll()
-        endAllOrphanedActivities()
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.cancelAll()
+            endAllOrphanedActivities()
+        }
     }
 
     func discardKillRecovery() {
         clearSentinel()
-        FocusNotificationScheduler.cancelAll()
-        endAllOrphanedActivities()
+        if systemIntegrationsEnabled {
+            FocusNotificationScheduler.cancelAll()
+            endAllOrphanedActivities()
+        }
     }
 
     // MARK: Helpers
@@ -293,11 +354,12 @@ struct ActiveSessionSentinel: Codable {
     }
 
     private func fireCountdownCompleteAlert() {
+        countdownCompleted = true
         guard let activity = liveActivity, let session = activeSession else { return }
         let task = session.workTask
         let tag = task?.tag
         let state = FocusActivityAttributes.ContentState(
-            emoji: tag?.emoji ?? "",
+            emoji: liveActivityEmoji(for: task),
             tagName: tag?.name ?? "Untagged",
             tagColorToken: tag?.colorToken ?? "gray",
             taskTitle: task?.title ?? "",
@@ -305,6 +367,7 @@ struct ActiveSessionSentinel: Codable {
             pausedSeconds: accumulatedPausedSeconds,
             isPaused: isPaused,
             countdownSeconds: countdownTarget,
+            countdownFinished: true,
             todayTotalSeconds: activity.content.state.todayTotalSeconds,
             stopwatchCapHours: stopwatchCapHours
         )
@@ -329,6 +392,7 @@ struct ActiveSessionSentinel: Codable {
         accumulatedPausedSeconds = 0
         pauseStart = nil
         countdownTarget = nil
+        countdownCompleted = false
     }
 
     private func writeSentinel(taskId: UUID, taskTitle: String, startAt: Date) {
@@ -390,7 +454,7 @@ struct ActiveSessionSentinel: Codable {
 
         let tag = task?.tag
         let state = FocusActivityAttributes.ContentState(
-            emoji: tag?.emoji ?? "",
+            emoji: liveActivityEmoji(for: task),
             tagName: tag?.name ?? "Untagged",
             tagColorToken: tag?.colorToken ?? "gray",
             taskTitle: task?.title ?? "",
@@ -398,6 +462,7 @@ struct ActiveSessionSentinel: Codable {
             pausedSeconds: 0,
             isPaused: false,
             countdownSeconds: countdownSeconds,
+            countdownFinished: false,
             todayTotalSeconds: todayTotalSeconds,
             stopwatchCapHours: stopwatchCapHours
         )
@@ -420,7 +485,7 @@ struct ActiveSessionSentinel: Codable {
         let task = session.workTask
         let tag = task?.tag
         let state = FocusActivityAttributes.ContentState(
-            emoji: tag?.emoji ?? "",
+            emoji: liveActivityEmoji(for: task),
             tagName: tag?.name ?? "Untagged",
             tagColorToken: tag?.colorToken ?? "gray",
             taskTitle: task?.title ?? "",
@@ -428,12 +493,22 @@ struct ActiveSessionSentinel: Codable {
             pausedSeconds: accumulatedPausedSeconds,
             isPaused: isPaused,
             countdownSeconds: countdownTarget,
+            countdownFinished: countdownCompleted,
             todayTotalSeconds: activity.content.state.todayTotalSeconds,
             stopwatchCapHours: stopwatchCapHours
         )
         Task {
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
+    }
+
+    private func liveActivityEmoji(for task: WorkTask?) -> String {
+        guard let title = task?.title.trimmingCharacters(in: .whitespacesAndNewlines),
+              let first = title.first,
+              first.isLiveActivityEmojiGlyph else {
+            return ""
+        }
+        return String(first)
     }
 
     private func endLiveActivity() {
@@ -454,5 +529,14 @@ struct ActiveSessionSentinel: Codable {
             }
         }
         liveActivity = nil
+    }
+}
+
+private extension Character {
+    var isLiveActivityEmojiGlyph: Bool {
+        unicodeScalars.contains { scalar in
+            scalar.properties.isEmojiPresentation
+                || (scalar.properties.isEmoji && scalar.value > 0x238C)
+        }
     }
 }

@@ -181,10 +181,10 @@ struct TimerPanelView: View {
     private var runningView: some View {
         VStack(spacing: 0) {
             // Big clock
-            Text(formatClock(timerService.elapsedSeconds))
+            Text(formatClock(timerService.displaySeconds))
                 .font(.system(size: 60, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white)
-                .animation(nil, value: timerService.elapsedSeconds)
+                .animation(nil, value: timerService.displaySeconds)
                 .padding(.vertical, 12)
 
             // Task info
@@ -239,19 +239,21 @@ struct TimerPanelView: View {
     private func startTimer(task: WorkTask) {
         guard !timerService.isRunning else { return }
         let preset = presets[modeIndex]
-        if let minutes = preset.1 {
+        let countdownSeconds = preset.1.map { $0 * 60 }
+        if let countdownSeconds {
             task.timerMode = .countdown
-            task.countdownDuration = minutes * 60
+            task.countdownDuration = countdownSeconds
         } else {
             task.timerMode = .stopwatch
         }
-        timerService.start(task: task, in: modelContext)
+        timerService.start(task: task, countdownSeconds: countdownSeconds, in: modelContext)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     private func startUnbound() {
         guard !timerService.isRunning else { return }
-        timerService.startUnbound(in: modelContext)
+        let countdownSeconds = presets[modeIndex].1.map { $0 * 60 }
+        timerService.startUnbound(countdownSeconds: countdownSeconds, in: modelContext)
     }
 
     private func stopTimer() {

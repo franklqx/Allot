@@ -25,6 +25,9 @@ struct FocusActivityAttributes: ActivityAttributes {
         var isPaused: Bool
         /// nil ⇒ stopwatch (count up). non-nil ⇒ countdown of N seconds.
         var countdownSeconds: Int?
+        /// True once a countdown reaches zero. The widget should render a
+        /// static complete state instead of a live timer interval.
+        var countdownFinished: Bool
         /// Total seconds spent on this task today, captured at activity start.
         /// Shown only in the expanded view.
         var todayTotalSeconds: Int

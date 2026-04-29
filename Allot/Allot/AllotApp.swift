@@ -7,6 +7,10 @@ import SwiftData
 
 @main
 struct AllotApp: App {
+    private static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([Tag.self, WorkTask.self, TimeSession.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
@@ -17,7 +21,9 @@ struct AllotApp: App {
         }
     }()
 
-    @State private var timerService = TimerService()
+    @State private var timerService = TimerService(
+        systemIntegrationsEnabled: !AllotApp.isRunningTests
+    )
 
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("appColorScheme")         private var colorSchemeString       = "system"

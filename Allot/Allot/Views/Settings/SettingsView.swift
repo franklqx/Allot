@@ -45,7 +45,7 @@ struct SettingsView: View {
                     TagsView()
                 } label: {
                     HStack {
-                        Label("Tag emojis", systemImage: "face.smiling")
+                        Label("Tags", systemImage: "tag")
                             .foregroundStyle(Color.textPrimary)
                         Spacer()
                         Text("Edit")
@@ -71,7 +71,7 @@ struct SettingsView: View {
                 Text("Focus")
             } footer: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Active focus sessions appear in the Dynamic Island on supported devices (iPhone 14 Pro and later). The left side shows the tag's emoji, the right side shows the live timer. Long-press the island to expand.")
+                    Text("Active focus sessions appear in the Dynamic Island on supported devices (iPhone 14 Pro and later). The left side shows the task emoji, the right side shows the live timer. Long-press the island to expand.")
                     Text("Stopwatch reminders fire at the chosen interval. Countdown sessions always alert at completion.")
                 }
             }

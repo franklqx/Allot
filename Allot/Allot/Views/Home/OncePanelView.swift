@@ -12,14 +12,19 @@ struct OncePanelView: View {
     let date: Date
     let onEdit: () -> Void
     var onStart: () -> Void = {}
+    var activeTaskTitle: String?
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
     @State private var showRemoveConfirm = false
 
-    private var isCompleted: Bool { task.isCompleted(on: date) }
     private var workedSeconds: Int { task.workedSeconds(on: date) }
+    private var isCountdown: Bool { task.timerMode == .countdown }
+    private var countdownLabel: String { formatDuration(task.countdownDuration) }
+    private var startTitle: String {
+        activeTaskTitle == nil ? (isCountdown ? "Start countdown" : "Start") : "Start this task"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -56,6 +61,13 @@ struct OncePanelView: View {
                             .font(.system(size: 14, design: .monospaced))
                             .foregroundStyle(Color.textSecondary)
                     }
+                    if isCountdown {
+                        Text("·")
+                            .foregroundStyle(Color.textTertiary)
+                        Label(countdownLabel, systemImage: "hourglass")
+                            .labelStyle(.titleAndIcon)
+                            .foregroundStyle(Color.textSecondary)
+                    }
                 }
                 .font(.subheadline)
                 .padding(.top, 6)
@@ -76,52 +88,21 @@ struct OncePanelView: View {
                     .padding(.top, 10)
                 }
 
-                TaskDaySessionsList(task: task, date: date)
-                    .padding(.top, 16)
-
                 // Actions
                 VStack(spacing: 8) {
-                    Button {
-                        dismiss()
-                        onStart()
-                    } label: {
-                        Label("Start", systemImage: "play.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.bgPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.textPrimary, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    HStack(spacing: 8) {
-                        Button {
-                            dismiss()
-                            onEdit()
-                        } label: {
-                            Label("Edit", systemImage: "pencil")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color.textPrimary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.bgSecondary, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(role: .destructive) {
-                            showRemoveConfirm = true
-                        } label: {
-                            Label("Remove", systemImage: "trash")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color.stateDestructive)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.bgSecondary, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
+                    if showRemoveConfirm {
+                        removeConfirmView
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    } else {
+                        actionButtons
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
                 .padding(.top, 20)
+                .animation(.easeInOut(duration: 0.18), value: showRemoveConfirm)
+
+                TaskDaySessionsList(task: task, date: date)
+                    .padding(.top, 22)
 
                 Text("Created \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.system(size: 11))
@@ -133,14 +114,98 @@ struct OncePanelView: View {
             .padding(.bottom, 14)
         }
         .background(Color.bgElevated)
-        .confirmationDialog("Remove \"\(task.title)\"?", isPresented: $showRemoveConfirm, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                modelContext.delete(task)
-                try? modelContext.save()
-                dismiss()
+    }
+
+    private var actionButtons: some View {
+        VStack(spacing: 8) {
+            Button {
+                if activeTaskTitle == nil {
+                    dismiss()
+                    onStart()
+                } else {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        onStart()
+                    }
+                }
+            } label: {
+                Label(startTitle, systemImage: "play.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.bgPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.textPrimary, in: Capsule())
             }
-            Button("Cancel", role: .cancel) {}
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                Button {
+                    dismiss()
+                    onEdit()
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.bgSecondary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button(role: .destructive) {
+                    showRemoveConfirm = true
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.stateDestructive)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.bgSecondary.opacity(0.75), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
+    private var removeConfirmView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Remove this task?", systemImage: "trash")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.textPrimary)
+
+            Text("This will delete the task and its sessions.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.textSecondary)
+
+            HStack(spacing: 8) {
+                Button {
+                    showRemoveConfirm = false
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.bgElevated, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button(role: .destructive) {
+                    modelContext.delete(task)
+                    try? modelContext.save()
+                    dismiss()
+                } label: {
+                    Text("Remove")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.bgPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.stateDestructive, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
+        .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
+    }
 }

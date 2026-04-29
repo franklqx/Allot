@@ -17,9 +17,11 @@ struct HomeView: View {
 
     @State private var hideCompleted = false
     @State private var taskToComplete: WorkTask?
+    @State private var activeTaskDetail: WorkTask?
     @State private var onceTaskDetail: WorkTask?
     @State private var recurringTaskDetail: WorkTask?
     @State private var taskToEdit: WorkTask?
+    @State private var taskPendingSwitch: WorkTask?
     @State private var showDateJump = false
 
     // MARK: Computed
@@ -68,7 +70,13 @@ struct HomeView: View {
                         ? [.medium, .large]
                         : [.height(360)]
                 )
-                .presentationDragIndicator(.visible)
+                .presentationDragIndicator(.hidden)
+                .presentationBackground(Color.bgElevated)
+        }
+        .sheet(item: $activeTaskDetail) { task in
+            ActiveTaskPanelView(task: task, date: selectedDate)
+                .presentationDetents([.height(390)])
+                .presentationDragIndicator(.hidden)
                 .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $onceTaskDetail) { task in
@@ -76,11 +84,11 @@ struct HomeView: View {
                 task: task,
                 date: selectedDate,
                 onEdit: { taskToEdit = task },
-                onStart: { onStart(task) }
+                onStart: { startFromDetail(task) },
+                activeTaskTitle: activeTaskTitle(excluding: task)
             )
-            // Match the checkmark sheet so row-tap can also pull up to top.
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            .presentationDetents([.height(panelHeight(for: task))])
+            .presentationDragIndicator(.hidden)
             .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $recurringTaskDetail) { task in
@@ -88,8 +96,10 @@ struct HomeView: View {
                 task: task,
                 date: selectedDate,
                 onEdit: { taskToEdit = task },
-                onStart: { onStart(task) }
+                onStart: { startFromDetail(task) },
+                activeTaskTitle: activeTaskTitle(excluding: task)
             )
+            .presentationDragIndicator(.hidden)
             .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $taskToEdit) { task in
@@ -100,6 +110,25 @@ struct HomeView: View {
             DateJumpSheet(date: $selectedDate, onDismiss: { showDateJump = false })
                 .presentationDetents([.medium])
                 .presentationBackground(Color.bgElevated)
+        }
+        .alert(
+            "Switch timer",
+            isPresented: Binding(
+                get: { taskPendingSwitch != nil },
+                set: { if !$0 { taskPendingSwitch = nil } }
+            )
+        ) {
+            Button("Cancel", role: .cancel) {
+                taskPendingSwitch = nil
+            }
+            Button("Switch") {
+                guard let task = taskPendingSwitch else { return }
+                taskPendingSwitch = nil
+                timerService.stop(in: modelContext)
+                onStart(task)
+            }
+        } message: {
+            Text("This ends the current session and starts this task.")
         }
     }
 
@@ -150,7 +179,9 @@ struct HomeView: View {
                             task: task,
                             date: selectedDate,
                             isRunning: timerService.activeSession?.workTask?.id == task.id,
-                            elapsedSeconds: timerService.elapsedSeconds,
+                            timerSeconds: timerService.displaySeconds,
+                            isCountingDown: timerService.activeSession?.workTask?.id == task.id
+                                && timerService.countdownTarget != nil,
                             onIconTap: { handleIconTap(task) },
                             onRowTap:  { openDetail(task) }
                         )
@@ -222,8 +253,8 @@ struct HomeView: View {
     // MARK: Actions
 
     private func panelHeight(for task: WorkTask) -> CGFloat {
-        // Header (title + date row) ~ 70 + actions block ~ 130 + bottom note 30
-        var height: CGFloat = 230
+        // Header + actions + bottom note. Session rows are added below.
+        var height: CGFloat = 270
         if task.tag != nil && !(task.tag?.isSystem ?? true) { height += 36 }
         let cal = Calendar.current
         let dayCount = task.sessions.filter {
@@ -233,14 +264,34 @@ struct HomeView: View {
             // Section header (28) + per-row (44) capped at 4 rows of visible space
             height += 28 + 44 * CGFloat(min(dayCount, 4))
         }
-        return min(height, 600)
+        return min(max(height, 360), 620)
     }
 
     private func openDetail(_ task: WorkTask) {
+        if timerService.isRunning,
+           timerService.activeSession?.workTask?.id == task.id {
+            activeTaskDetail = task
+            return
+        }
+
         switch task.type {
         case .once:      onceTaskDetail      = task
         case .recurring: recurringTaskDetail = task
         }
+    }
+
+    private func activeTaskTitle(excluding task: WorkTask) -> String? {
+        guard timerService.isRunning else { return nil }
+        if timerService.activeSession?.workTask?.id == task.id { return nil }
+        return timerService.activeSession?.workTask?.title ?? "current timer"
+    }
+
+    private func startFromDetail(_ task: WorkTask) {
+        if timerService.isRunning {
+            taskPendingSwitch = task
+            return
+        }
+        onStart(task)
     }
 
     private func handleIconTap(_ task: WorkTask) {
@@ -262,6 +313,119 @@ struct HomeView: View {
         }
         try? modelContext.save()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+}
+
+// MARK: - Active task sheet
+
+private struct ActiveTaskPanelView: View {
+    let task: WorkTask
+    let date: Date
+
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @Environment(TimerService.self) private var timerService
+
+    private var modeTitle: String {
+        if timerService.countdownCompleted { return "Time's up" }
+        if timerService.countdownTarget != nil { return "Countdown" }
+        if task.timerMode == .countdown { return "Continuing" }
+        return "Stopwatch"
+    }
+
+    private var modeIcon: String {
+        if timerService.countdownCompleted { return "bell.fill" }
+        if timerService.countdownTarget != nil { return "hourglass" }
+        if task.timerMode == .countdown { return "arrow.clockwise" }
+        return "stopwatch"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            GrabberView()
+
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(task.title)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    Label(modeTitle, systemImage: modeIcon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.textSecondary)
+                        .lineLimit(1)
+                }
+                .padding(.top, 12)
+
+                HStack(spacing: 6) {
+                    if let tag = task.tag, !tag.isSystem {
+                        Circle()
+                            .fill(Color.tagColor(tag.colorToken))
+                            .frame(width: 7, height: 7)
+                        Text(tag.name)
+                    } else {
+                        Text("Untagged")
+                    }
+                    Text("·")
+                        .foregroundStyle(Color.textTertiary)
+                    Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color.textSecondary)
+                .padding(.top, 8)
+
+                Text(formatClock(timerService.displaySeconds))
+                    .font(.system(size: 58, weight: .regular, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.textPrimary)
+                    .minimumScaleFactor(0.55)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 34)
+                    .animation(nil, value: timerService.displaySeconds)
+
+                HStack(spacing: 10) {
+                    Button {
+                        timerService.isPaused ? timerService.resume() : timerService.pause()
+                    } label: {
+                        Label(timerService.isPaused ? "Resume" : "Pause",
+                              systemImage: timerService.isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Color.bgSecondary, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(role: .destructive) {
+                        timerService.stop(in: modelContext)
+                        dismiss()
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.stateDestructive)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Color.bgSecondary.opacity(0.75), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 32)
+
+                Text("This task is currently running.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 16)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 18)
+        }
+        .background(Color.bgElevated)
     }
 }
 

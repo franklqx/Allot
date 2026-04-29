@@ -49,12 +49,12 @@ struct TagsView: View {
         }
         .sheet(isPresented: $showCreateSheet) {
             TagEditSheet()
-                .presentationDetents([.height(560)])
+                .presentationDetents([.height(400)])
                 .presentationBackground(Color.bgPrimary)
         }
         .sheet(item: $editingTag) { tag in
             TagEditSheet(tag: tag)
-                .presentationDetents([.height(560)])
+                .presentationDetents([.height(400)])
                 .presentationBackground(Color.bgPrimary)
         }
     }
@@ -64,9 +64,6 @@ struct TagsView: View {
             Circle()
                 .fill(Color.tagColor(tag.colorToken))
                 .frame(width: 14, height: 14)
-            if let emoji = tag.emoji, !emoji.isEmpty {
-                Text(emoji).font(.system(size: 18))
-            }
             Text(tag.name)
                 .font(.system(size: 16))
                 .foregroundStyle(Color.textPrimary)

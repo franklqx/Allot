@@ -3,7 +3,7 @@
 //  Allot
 //
 //  Expandable bottom sheet for Recurring tasks.
-//  Default 1/3 height → drag up to 2/3 max. Content scrolls inside.
+//  Default 1/3 height → drag up near the Dynamic Island. Content scrolls inside.
 
 import SwiftUI
 import SwiftData
@@ -13,6 +13,7 @@ struct RecurringPanelView: View {
     let date: Date
     let onEdit: () -> Void
     var onStart: () -> Void = {}
+    var activeTaskTitle: String?
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -20,6 +21,11 @@ struct RecurringPanelView: View {
     @State private var calendarSelectedDate: Date = Calendar.current.startOfDay(for: Date())
 
     private var tagColor: Color { task.tag.map { Color.tagColor($0.colorToken) } ?? Color.tagStone }
+    private var isCountdown: Bool { task.timerMode == .countdown }
+    private var countdownLabel: String { formatDuration(task.countdownDuration) }
+    private var startTitle: String {
+        activeTaskTitle == nil ? (isCountdown ? "Start countdown" : "Start") : "Start this task"
+    }
 
     var body: some View {
         ScrollView {
@@ -37,7 +43,7 @@ struct RecurringPanelView: View {
                     Text(task.title)
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(Color.textPrimary)
-                        .padding(.top, 2)
+                        .padding(.top, 8)
 
                     // Tag + share %
                     if let tag = task.tag {
@@ -57,61 +63,24 @@ struct RecurringPanelView: View {
                         .padding(.top, 8)
                     }
 
-                    // Start (primary)
-                    Button {
-                        dismiss()
-                        onStart()
-                    } label: {
-                        Label("Start", systemImage: "play.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.bgPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.textPrimary, in: Capsule())
+                    if isCountdown {
+                        Label(countdownLabel, systemImage: "hourglass")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Color.textSecondary)
+                            .padding(.top, 8)
                     }
-                    .buttonStyle(.plain)
+
+                    VStack(spacing: 8) {
+                        if showRemoveConfirm {
+                            removeConfirmView
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        } else {
+                            actionButtons
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
+                    }
                     .padding(.top, 16)
-
-                    // Edit · Pause · Remove
-                    HStack(spacing: 8) {
-                        Button {
-                            dismiss()
-                            onEdit()
-                        } label: {
-                            Label("Edit", systemImage: "pencil")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color.textPrimary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.bgSecondary, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-
-                        Button {
-                            archiveTask()
-                        } label: {
-                            Label("Hide", systemImage: "eye.slash")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color.textTertiary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.bgSecondary.opacity(0.6), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(role: .destructive) {
-                            showRemoveConfirm = true
-                        } label: {
-                            Label("Remove", systemImage: "trash")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color.stateDestructive)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.bgSecondary, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.top, 8)
+                    .animation(.easeInOut(duration: 0.18), value: showRemoveConfirm)
 
                     Divider().padding(.vertical, 24)
 
@@ -163,16 +132,113 @@ struct RecurringPanelView: View {
             }
         }
         .background(Color.bgElevated)
-        .presentationDetents([.fraction(1/3), .fraction(2/3)])
+        .presentationDetents([.fraction(1/3), .fraction(0.92)])
         .presentationDragIndicator(.hidden)
-        .confirmationDialog("Remove \"\(task.title)\"?", isPresented: $showRemoveConfirm, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                modelContext.delete(task)
-                try? modelContext.save()
-                dismiss()
+    }
+
+    private var actionButtons: some View {
+        VStack(spacing: 8) {
+            Button {
+                if activeTaskTitle == nil {
+                    dismiss()
+                    onStart()
+                } else {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        onStart()
+                    }
+                }
+            } label: {
+                Label(startTitle, systemImage: "play.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.bgPrimary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.textPrimary, in: Capsule())
             }
-            Button("Cancel", role: .cancel) {}
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                Button {
+                    dismiss()
+                    onEdit()
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.bgSecondary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    archiveTask()
+                } label: {
+                    Label("Hide", systemImage: "eye.slash")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.textTertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.bgSecondary.opacity(0.6), in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button(role: .destructive) {
+                    showRemoveConfirm = true
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.stateDestructive)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.bgSecondary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
+    }
+
+    private var removeConfirmView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Remove this task?", systemImage: "trash")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.textPrimary)
+
+            Text("This will delete the task and its sessions.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.textSecondary)
+
+            HStack(spacing: 8) {
+                Button {
+                    showRemoveConfirm = false
+                } label: {
+                    Text("Cancel")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.bgElevated, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button(role: .destructive) {
+                    modelContext.delete(task)
+                    try? modelContext.save()
+                    dismiss()
+                } label: {
+                    Text("Remove")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.bgPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.stateDestructive, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(14)
+        .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
     }
 
     private func archiveTask() {
