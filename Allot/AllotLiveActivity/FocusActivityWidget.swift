@@ -25,9 +25,12 @@ import WidgetKit
 struct FocusActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FocusActivityAttributes.self) { context in
-            // Lock-screen / banner UI
+            // Lock-screen / banner UI. Pass nil so iOS uses its default
+            // translucent glass material in light mode (wallpaper visible
+            // through). The view itself paints solid black in dark mode so
+            // the result is OLED-friendly there.
             LockScreenView(state: context.state)
-                .activityBackgroundTint(Color.bgElevated)
+                .activityBackgroundTint(nil)
                 .activitySystemActionForegroundColor(Color.textPrimary)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -51,11 +54,18 @@ struct FocusActivityWidget: Widget {
                     .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
+                    // Anchored hard to the right edge so the digits sit at
+                    // the very far right of the expanded island. `frame
+                    // maxWidth: .infinity, alignment: .trailing` overrides
+                    // SwiftUI's default fill-and-center for Text(timerInterval:).
                     timerText(for: context.state, big: true)
                         .font(.system(size: 28, weight: .semibold, design: .rounded))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .foregroundStyle(context.state.isPaused ? Color.textSecondary : Color.textPrimary)
-                        .padding(.trailing, 4)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.trailing, 6)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack(spacing: 12) {
@@ -79,15 +89,27 @@ struct FocusActivityWidget: Widget {
                 }
             } compactLeading: {
                 Text(context.state.emoji.isEmpty ? "⏱" : context.state.emoji)
-                    .font(.system(size: 14))
+                    .font(.system(size: 12))
             } compactTrailing: {
+                // CRITICAL — `Text(timerInterval:)` makes iOS reserve space
+                // for the widest possible representation of the range (e.g.
+                // "59:59:59" for a 24h cap). On Pro devices that pushes the
+                // compact pill wide enough to overlap the status-bar time
+                // and signal/battery. Apple's stock Timer uses a private
+                // API to dodge this; the public workaround (per Apple Dev
+                // Forums #735125 / #723316) is to clamp the trailing view
+                // to a fixed width and let `minimumScaleFactor` shrink the
+                // digits if a longer format ever lands inside it.
                 timerText(for: context.state, big: false)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(context.state.isPaused ? Color.textSecondary : Color.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(width: 54, alignment: .trailing)
+                    .foregroundStyle(context.state.isPaused ? Color.white.opacity(0.6) : Color.white)
             } minimal: {
                 Text(context.state.emoji.isEmpty ? "⏱" : context.state.emoji)
-                    .font(.system(size: 14))
+                    .font(.system(size: 12))
             }
             .keylineTint(Color.tagColor(context.state.tagColorToken))
         }
@@ -131,9 +153,24 @@ struct FocusActivityWidget: Widget {
 
 private struct LockScreenView: View {
     let state: FocusActivityAttributes.ContentState
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(spacing: 14) {
+        content
+            // Dark mode: paint solid black behind the row so the activity
+            // banner reads as a clean black card.
+            // Light mode: let iOS's default translucent glass material show
+            // through (activityBackgroundTint is nil at the configuration
+            // level), so the wallpaper is visible behind the row.
+            .background(colorScheme == .dark ? Color.black : Color.clear)
+    }
+
+    private var content: some View {
+        // Single-row layout: ALL meta info on the left, timer pinned hard
+        // to the far right edge. This matches the expanded Dynamic Island
+        // (leading region carries the meta, trailing region carries the
+        // timer), so the lock-screen banner reads consistently with it.
+        HStack(alignment: .center, spacing: 14) {
             ZStack {
                 Circle()
                     .fill(Color.tagColor(state.tagColorToken).opacity(0.18))
@@ -142,7 +179,7 @@ private struct LockScreenView: View {
                     .font(.system(size: 28))
             }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Circle()
                         .fill(Color.tagColor(state.tagColorToken))
@@ -150,6 +187,7 @@ private struct LockScreenView: View {
                     Text(state.tagName)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Color.tagColor(state.tagColorToken))
+                        .lineLimit(1)
                 }
                 if !state.taskTitle.isEmpty {
                     Text(state.taskTitle)
@@ -157,20 +195,58 @@ private struct LockScreenView: View {
                         .foregroundStyle(Color.textPrimary)
                         .lineLimit(1)
                 }
-                Text(state.isPaused ? "Paused" : "In progress")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.textSecondary)
+                metaRow
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             timer
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
+                .font(.system(size: 28, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .foregroundStyle(state.isPaused ? Color.textSecondary : Color.textPrimary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+
+    /// Compact "Started 14:02 · Today 1h 12m · Paused" row that lives
+    /// under the title on the left side.
+    private var metaRow: some View {
+        HStack(spacing: 8) {
+            Label(startTimeString(state.startAt), systemImage: "play.circle")
+                .labelStyle(.titleAndIcon)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.textSecondary)
+
+            Text("·")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.textTertiary)
+
+            Label("Today \(formatDurationCompact(state.todayTotalSeconds))",
+                  systemImage: "clock")
+                .labelStyle(.titleAndIcon)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.textSecondary)
+
+            if state.isPaused {
+                Text("·")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.textTertiary)
+                Label("Paused", systemImage: "pause.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private func startTimeString(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: d)
     }
 
     @ViewBuilder
@@ -190,5 +266,60 @@ private struct LockScreenView: View {
             let cap = anchor.addingTimeInterval(TimeInterval(state.stopwatchCapHours * 3600))
             Text(timerInterval: anchor...cap, countsDown: false)
         }
+    }
+}
+
+// MARK: - SwiftUI Previews
+//
+// Xcode-only previews so the lock-screen banner can be inspected against
+// both color schemes and a wallpaper-style background. iOS itself uses a
+// `.regularMaterial` glass behind the banner when `activityBackgroundTint`
+// is nil — the previews below approximate that material so the visual is
+// representative.
+
+private extension FocusActivityAttributes.ContentState {
+    static var previewSample: Self {
+        .init(
+            emoji: "💻",
+            tagName: "Work",
+            tagColorToken: "sky",
+            taskTitle: "Polish Live Activity",
+            startAt: Date().addingTimeInterval(-127),
+            pausedSeconds: 0,
+            isPaused: false,
+            countdownSeconds: nil,
+            todayTotalSeconds: 8_220,
+            stopwatchCapHours: 1
+        )
+    }
+}
+
+#Preview("Lock — Light (glass)", traits: .sizeThatFitsLayout) {
+    ZStack {
+        // Stand-in for the wallpaper behind the activity banner.
+        LinearGradient(
+            colors: [.blue.opacity(0.7), .purple.opacity(0.4), .pink.opacity(0.3)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+        .frame(height: 220)
+
+        LockScreenView(state: .previewSample)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 16)
+            .preferredColorScheme(.light)
+    }
+}
+
+#Preview("Lock — Dark (black)", traits: .sizeThatFitsLayout) {
+    ZStack {
+        Color(white: 0.06)
+            .frame(height: 220)
+
+        LockScreenView(state: .previewSample)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(.horizontal, 16)
+            .preferredColorScheme(.dark)
     }
 }

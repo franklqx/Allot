@@ -57,6 +57,20 @@ struct ActiveSessionSentinel: Codable {
     private static let reminderIntervalKey = "focusReminderIntervalMinutes"
     private static let dynamicIslandEnabledKey = "dynamicIslandEnabled"
 
+    init() {
+        // App cold start: the system may still hold Live Activities from a
+        // previous launch (foreground crash, force-quit, OS bug). End them
+        // unconditionally so we don't end up with two stacked activities once
+        // the user starts a new session.
+        Task { await Self.endAllActivitiesAtLaunch() }
+    }
+
+    private static func endAllActivitiesAtLaunch() async {
+        for activity in Activity<FocusActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
     // MARK: Live Activity
 
     private var liveActivity: Activity<FocusActivityAttributes>?
@@ -261,9 +275,11 @@ struct ActiveSessionSentinel: Codable {
                 self.fireCountdownCompleteAlert()
             }
 
-            // Stopwatch only: at 55 minutes, extend the island's reserved width
-            // from M:SS to H:MM:SS so the timer keeps rendering correctly past
-            // the hour mark.
+            // Stopwatch only: at 55 minutes, extend the cap from 1h → 24h so
+            // expanded/lock-screen text can render H:MM:SS for long sessions.
+            // The compact pill is held narrow by an explicit frame width on
+            // the widget side (FocusActivityWidget.compactTrailing), so this
+            // cap bump no longer crowds the status bar.
             if self.countdownTarget == nil,
                self.stopwatchCapHours == 1,
                prev < 3300,

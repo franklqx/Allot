@@ -61,8 +61,14 @@ struct HomeView: View {
         }
         .sheet(item: $taskToComplete) { task in
             CompleteSheet(task: task, date: selectedDate)
-                .presentationDetents([.height(task.workedSeconds(on: selectedDate) > 0 ? 300 : 290)])
-                .presentationDragIndicator(.hidden)
+                // Path A (logged time exists) needs room for the today's-
+                // sessions list at the bottom; Path B is a tighter sheet.
+                .presentationDetents(
+                    task.workedSeconds(on: selectedDate) > 0
+                        ? [.medium, .large]
+                        : [.height(360)]
+                )
+                .presentationDragIndicator(.visible)
                 .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $onceTaskDetail) { task in
@@ -72,8 +78,9 @@ struct HomeView: View {
                 onEdit: { taskToEdit = task },
                 onStart: { onStart(task) }
             )
-            .presentationDetents([.height(panelHeight(for: task))])
-            .presentationDragIndicator(.hidden)
+            // Match the checkmark sheet so row-tap can also pull up to top.
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
             .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $recurringTaskDetail) { task in
