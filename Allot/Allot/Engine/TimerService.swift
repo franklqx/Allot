@@ -58,6 +58,7 @@ struct ActiveSessionSentinel: Codable {
     private static let sentinelKey = "activeSession"
     private static let reminderIntervalKey = "focusReminderIntervalMinutes"
     private static let dynamicIslandEnabledKey = "dynamicIslandEnabled"
+    private static let showTaskEmojiKey = "showTaskEmoji"
 
     init(systemIntegrationsEnabled: Bool = true) {
         self.systemIntegrationsEnabled = systemIntegrationsEnabled
@@ -110,7 +111,7 @@ struct ActiveSessionSentinel: Codable {
         if systemIntegrationsEnabled {
             FocusNotificationScheduler.requestAuthorizationIfNeeded()
             FocusNotificationScheduler.schedule(
-                taskTitle: task.title,
+                taskTitle: liveActivityTaskTitle(for: task),
                 countdownSeconds: countdownSeconds,
                 reminderIntervalMinutes: reminderIntervalMinutesPreference
             )
@@ -122,6 +123,7 @@ struct ActiveSessionSentinel: Codable {
                 todayTotalSeconds: todayTotalSeconds(for: task, in: context)
             )
         }
+        WidgetSnapshotBuilder.publish(in: context, timerService: self)
     }
 
     func startUnbound(countdownSeconds: Int? = nil, in context: ModelContext) {
@@ -159,6 +161,7 @@ struct ActiveSessionSentinel: Codable {
                 todayTotalSeconds: 0
             )
         }
+        WidgetSnapshotBuilder.publish(in: context, timerService: self)
     }
 
     func pause() {
@@ -187,7 +190,7 @@ struct ActiveSessionSentinel: Codable {
 
         if systemIntegrationsEnabled {
             FocusNotificationScheduler.schedule(
-                taskTitle: activeSession?.workTask?.title ?? "",
+                taskTitle: liveActivityTaskTitle(for: activeSession?.workTask),
                 countdownSeconds: countdownTarget,
                 reminderIntervalMinutes: reminderIntervalMinutesPreference,
                 elapsedSecondsAtStart: elapsedSeconds
@@ -207,7 +210,7 @@ struct ActiveSessionSentinel: Codable {
 
         if systemIntegrationsEnabled {
             FocusNotificationScheduler.schedule(
-                taskTitle: activeSession?.workTask?.title ?? "",
+                taskTitle: liveActivityTaskTitle(for: activeSession?.workTask),
                 countdownSeconds: countdownTarget,
                 reminderIntervalMinutes: reminderIntervalMinutesPreference,
                 elapsedSecondsAtStart: elapsedSeconds
@@ -226,7 +229,7 @@ struct ActiveSessionSentinel: Codable {
 
         if systemIntegrationsEnabled {
             FocusNotificationScheduler.schedule(
-                taskTitle: activeSession?.workTask?.title ?? "",
+                taskTitle: liveActivityTaskTitle(for: activeSession?.workTask),
                 countdownSeconds: nil,
                 reminderIntervalMinutes: reminderIntervalMinutesPreference,
                 elapsedSecondsAtStart: elapsedSeconds
@@ -279,6 +282,7 @@ struct ActiveSessionSentinel: Codable {
             FocusNotificationScheduler.cancelAll()
             endLiveActivity()
         }
+        WidgetSnapshotBuilder.publish(in: context, timerService: self)
     }
 
     // MARK: Kill Recovery
@@ -309,6 +313,72 @@ struct ActiveSessionSentinel: Codable {
             FocusNotificationScheduler.cancelAll()
             endAllOrphanedActivities()
         }
+    }
+
+    /// Resume the session that was running before the app got killed. Reuses
+    /// the orphan TimeSession (endAt == nil) when present, or recreates one at
+    /// the sentinel's startAt if the row is missing. The TimerService transitions
+    /// back to `running` — ticker, Live Activity, and widget snapshot all
+    /// re-engage. The sentinel stays so a second kill is still recoverable.
+    ///
+    /// Caveat: a countdown that was running pre-kill drops back to stopwatch
+    /// mode here — we don't persist countdown target, and after a kill there's
+    /// no reliable "remaining seconds" to resume against.
+    func continueRecoveredSession(for sentinel: ActiveSessionSentinel, in context: ModelContext) {
+        guard !isRunning else { return }
+
+        let startAt = sentinel.startAt
+        let descriptor = FetchDescriptor<TimeSession>(
+            predicate: #Predicate { $0.startAt == startAt && $0.endAt == nil }
+        )
+        let existing = (try? context.fetch(descriptor))?.first
+
+        let session: TimeSession
+        if let existing {
+            session = existing
+        } else {
+            // Orphan row was cleaned up — recreate to anchor the sentinel start.
+            let taskDesc = FetchDescriptor<WorkTask>(
+                predicate: #Predicate { $0.id == sentinel.taskId }
+            )
+            let task = (try? context.fetch(taskDesc))?.first
+            session = TimeSession(
+                startAt: sentinel.startAt,
+                source: .liveTimer,
+                workTask: task
+            )
+            context.insert(session)
+            try? context.save()
+        }
+
+        activeSession = session
+        elapsedSeconds = max(0, Int(Date().timeIntervalSince(session.startAt)) - session.totalPausedSeconds)
+        accumulatedPausedSeconds = session.totalPausedSeconds
+        pauseStart = nil
+        countdownTarget = nil
+        countdownCompleted = false
+        isRunning = true
+        isPaused = false
+        startTicker()
+
+        if systemIntegrationsEnabled, let task = session.workTask {
+            FocusNotificationScheduler.requestAuthorizationIfNeeded()
+            FocusNotificationScheduler.schedule(
+                taskTitle: liveActivityTaskTitle(for: task),
+                countdownSeconds: nil,
+                reminderIntervalMinutes: reminderIntervalMinutesPreference,
+                elapsedSecondsAtStart: elapsedSeconds
+            )
+            startLiveActivity(
+                sessionId: session.id,
+                task: task,
+                startAt: session.startAt,
+                countdownSeconds: nil,
+                todayTotalSeconds: todayTotalSeconds(for: task, in: context)
+            )
+        }
+        WidgetSnapshotBuilder.publish(in: context, timerService: self)
+        // Sentinel deliberately retained — survives a second kill.
     }
 
     func discardKillRecovery() {
@@ -362,7 +432,7 @@ struct ActiveSessionSentinel: Codable {
             emoji: liveActivityEmoji(for: task),
             tagName: tag?.name ?? "Untagged",
             tagColorToken: tag?.colorToken ?? "gray",
-            taskTitle: task?.title ?? "",
+            taskTitle: liveActivityTaskTitle(for: task),
             startAt: session.startAt,
             pausedSeconds: accumulatedPausedSeconds,
             isPaused: isPaused,
@@ -440,6 +510,11 @@ struct ActiveSessionSentinel: Codable {
         return v ?? true
     }
 
+    private var showTaskEmojiPreference: Bool {
+        let v = UserDefaults.standard.object(forKey: Self.showTaskEmojiKey) as? Bool
+        return v ?? true
+    }
+
     private func startLiveActivity(
         sessionId: UUID,
         task: WorkTask?,
@@ -457,7 +532,7 @@ struct ActiveSessionSentinel: Codable {
             emoji: liveActivityEmoji(for: task),
             tagName: tag?.name ?? "Untagged",
             tagColorToken: tag?.colorToken ?? "gray",
-            taskTitle: task?.title ?? "",
+            taskTitle: liveActivityTaskTitle(for: task),
             startAt: startAt,
             pausedSeconds: 0,
             isPaused: false,
@@ -488,7 +563,7 @@ struct ActiveSessionSentinel: Codable {
             emoji: liveActivityEmoji(for: task),
             tagName: tag?.name ?? "Untagged",
             tagColorToken: tag?.colorToken ?? "gray",
-            taskTitle: task?.title ?? "",
+            taskTitle: liveActivityTaskTitle(for: task),
             startAt: session.startAt,
             pausedSeconds: accumulatedPausedSeconds,
             isPaused: isPaused,
@@ -503,12 +578,14 @@ struct ActiveSessionSentinel: Codable {
     }
 
     private func liveActivityEmoji(for task: WorkTask?) -> String {
-        guard let title = task?.title.trimmingCharacters(in: .whitespacesAndNewlines),
-              let first = title.first,
-              first.isLiveActivityEmojiGlyph else {
-            return ""
-        }
-        return String(first)
+        guard showTaskEmojiPreference, let task else { return "" }
+        return task.titleEmojiPrefix
+    }
+
+    /// The badge already carries the emoji (or the ⏱ fallback when the
+    /// preference is off), so the title text should never repeat it.
+    private func liveActivityTaskTitle(for task: WorkTask?) -> String {
+        task?.titleWithoutEmoji ?? ""
     }
 
     private func endLiveActivity() {
@@ -532,11 +609,3 @@ struct ActiveSessionSentinel: Codable {
     }
 }
 
-private extension Character {
-    var isLiveActivityEmojiGlyph: Bool {
-        unicodeScalars.contains { scalar in
-            scalar.properties.isEmojiPresentation
-                || (scalar.properties.isEmoji && scalar.value > 0x238C)
-        }
-    }
-}

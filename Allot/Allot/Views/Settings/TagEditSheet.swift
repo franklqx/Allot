@@ -2,7 +2,9 @@
 //  TagEditSheet.swift
 //  Allot
 //
-//  Create or edit a tag: name field + 12-color swatch grid.
+//  Create or edit a tag: name field + 12-color swatch grid + tasks list.
+//  Layout matches the rest of the Settings tree (insetGrouped List), so
+//  rows render as white cards on the system grouped background.
 
 import SwiftUI
 import SwiftData
@@ -20,9 +22,12 @@ struct TagEditSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @State private var name: String
     @State private var selectedToken: String
     @State private var showDeleteConfirm = false
+    @State private var taskToEdit: WorkTask?
     @FocusState private var nameFieldFocused: Bool
 
     init(tag: Tag? = nil) {
@@ -34,67 +39,61 @@ struct TagEditSheet: View {
     private var isEditing: Bool { tag != nil }
     private var canSave: Bool   { !name.trimmingCharacters(in: .whitespaces).isEmpty }
 
+    private var taggedTasks: [WorkTask] {
+        guard let tag else { return [] }
+        return (tag.tasks ?? [])
+            .filter { $0.archivedAt == nil }
+            .sorted { $0.createdAt > $1.createdAt }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            sheetHeader
+        List {
+            Section("Name") {
+                TextField("Tag name", text: $name)
+                    .font(.system(size: 17))
+                    .focused($nameFieldFocused)
+                    .submitLabel(.done)
+            }
 
-            VStack(alignment: .leading, spacing: 0) {
-                // Name
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Name")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.textSecondary)
-                    TextField("Tag name", text: $name)
-                        .font(.system(size: 17))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 13)
-                        .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
-                        .focused($nameFieldFocused)
-                        .submitLabel(.done)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 24)
-                .padding(.bottom, 24)
-
-                // Color grid
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Color")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.textSecondary)
-                        .padding(.horizontal, 20)
-
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.flexible()), count: 6),
-                        spacing: 14
-                    ) {
-                        ForEach(tagColorTokens, id: \.self) { token in
-                            colorSwatch(token)
-                        }
+            Section("Color") {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible()), count: 6),
+                    spacing: 14
+                ) {
+                    ForEach(tagColorTokens, id: \.self) { token in
+                        colorSwatch(token)
                     }
-                    .padding(.horizontal, 20)
                 }
-                .padding(.bottom, 24)
+                .padding(.vertical, 6)
+            }
 
-                Spacer()
+            if isEditing {
+                tasksSection
 
-                if isEditing {
-                    Button {
+                Section {
+                    Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
-                        Text("Delete Tag")
-                            .font(.system(size: 16))
-                            .foregroundStyle(Color.stateDestructive)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                        HStack {
+                            Spacer()
+                            Text("Delete Tag")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(Color.stateDestructive)
+                            Spacer()
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
                 }
             }
         }
-        .background(Color.bgPrimary)
-        .onAppear { nameFieldFocused = true }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Color.bgGrouped)
+        .sheetChrome(
+            title: isEditing ? "Edit Tag" : "New Tag",
+            leading: SheetAction(label: "Cancel") { dismiss() },
+            trailing: SheetAction(label: "Save", isDisabled: !canSave) { save() }
+        )
+        .onAppear { nameFieldFocused = !isEditing }
         .confirmationDialog(
             "Delete \"\(tag?.name ?? "")\"?",
             isPresented: $showDeleteConfirm,
@@ -108,32 +107,66 @@ struct TagEditSheet: View {
         } message: {
             Text("Tasks using this tag will become untagged.")
         }
+        .sheet(item: $taskToEdit) { task in
+            NewTaskView(prefilledDate: task.scheduledDate ?? Date(), editingTask: task)
+                .presentationDetents([.large])
+        }
     }
 
-    private var sheetHeader: some View {
-        ZStack {
-            Text(isEditing ? "Edit Tag" : "New Tag")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.textPrimary)
-
+    @ViewBuilder
+    private var tasksSection: some View {
+        let tasks = taggedTasks
+        Section {
+            if tasks.isEmpty {
+                Text("No tasks use this tag yet")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.textTertiary)
+            } else {
+                ForEach(tasks, id: \.id) { task in
+                    Button {
+                        taskToEdit = task
+                    } label: {
+                        taskRow(task)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        } header: {
             HStack {
-                Button("Cancel") { dismiss() }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.textSecondary)
-                    .frame(minWidth: 88, minHeight: 44, alignment: .leading)
-
+                Text("Tasks")
                 Spacer()
-
-                Button("Save", action: save)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(canSave ? Color.accentPrimary : Color.textTertiary)
-                    .frame(minWidth: 88, minHeight: 44, alignment: .trailing)
-                    .disabled(!canSave)
+                if !tasks.isEmpty {
+                    Text("\(tasks.count)")
+                        .foregroundStyle(Color.textTertiary)
+                }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
+    }
+
+    private func taskRow(_ task: WorkTask) -> some View {
+        HStack(spacing: 12) {
+            TaskBox(
+                color: Color.tagColor(selectedToken),
+                style: TaskBox.style(for: task.type),
+                size: 14,
+                cornerRadius: 3
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.displayTitle(showEmoji: showTaskEmoji))
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                Text(task.type == .once ? "Once" : "Recurring")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.textTertiary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.textTertiary.opacity(0.5))
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     private func colorSwatch(_ token: String) -> some View {
@@ -153,6 +186,7 @@ struct TagEditSheet: View {
                 }
             }
             .onTapGesture { selectedToken = token }
+            .frame(maxWidth: .infinity)
     }
 
     private func save() {

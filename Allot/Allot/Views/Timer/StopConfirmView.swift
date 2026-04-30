@@ -18,6 +18,8 @@ struct StopConfirmView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss)      private var dismiss
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @State private var showDurationEdit = false
     @State private var showAttachSheet  = false
     @State private var editedMinutes: Int
@@ -46,8 +48,6 @@ struct StopConfirmView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GrabberView()
-
             if duration < 30 {
                 discardPrompt
             } else if session.workTask == nil {
@@ -61,7 +61,7 @@ struct StopConfirmView: View {
         .presentationDetents([
             .height(duration < 30 ? 240 : (session.workTask == nil ? 280 : 320))
         ])
-        .presentationDragIndicator(.hidden)
+        .presentationDragIndicator(.visible)
         .sheet(isPresented: $showDurationEdit) {
             HorizontalSliderView(
                 mode: .duration,
@@ -106,7 +106,7 @@ struct StopConfirmView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 18)
+            .padding(.top, 20)
             .padding(.bottom, 18)
 
             sheetDivider
@@ -119,7 +119,7 @@ struct StopConfirmView: View {
                             .fill(Color.tagColor(tag.colorToken))
                             .frame(width: 8, height: 8)
                     }
-                    Text(task.title)
+                    Text(task.displayTitle(showEmoji: showTaskEmoji))
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(Color.textPrimary)
                         .lineLimit(1)
@@ -188,7 +188,7 @@ struct StopConfirmView: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 18)
+            .padding(.top, 20)
             .padding(.bottom, 18)
 
             sheetDivider
@@ -229,7 +229,7 @@ struct StopConfirmView: View {
                     .foregroundStyle(Color.textTertiary)
             }
             .padding(.horizontal, 24)
-            .padding(.top, 18)
+            .padding(.top, 20)
             .padding(.bottom, 10)
 
             HStack {

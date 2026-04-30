@@ -21,6 +21,8 @@ struct TaskRowView: View {
     let onIconTap: () -> Void
     let onRowTap: () -> Void
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     private var isCompleted: Bool { task.isCompleted(on: date) }
     private var workedSeconds: Int { task.workedSeconds(on: date) }
     private var countdownSeconds: Int? {
@@ -52,7 +54,7 @@ struct TaskRowView: View {
             Button(action: onRowTap) {
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(task.title)
+                        Text(task.displayTitle(showEmoji: showTaskEmoji))
                             .font(.system(size: 16, weight: .regular))
                             .foregroundStyle(isCompleted ? Color.textTertiary : Color.textPrimary)
                             .lineLimit(1)

@@ -12,6 +12,7 @@ import SwiftData
 struct ArchivedTasksView: View {
 
     @Environment(\.modelContext) private var modelContext
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
     @Query private var allTasks: [WorkTask]
 
     private var archived: [WorkTask] {
@@ -51,7 +52,7 @@ struct ArchivedTasksView: View {
             )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.title)
+                Text(task.displayTitle(showEmoji: showTaskEmoji))
                     .font(.system(size: 15))
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)

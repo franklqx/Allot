@@ -2,51 +2,54 @@
 //  OnboardingView.swift
 //  Allot
 //
-//  4-step first-launch flow. Shown once; completion sets hasCompletedOnboarding = true.
+//  6-step first-launch flow:
+//    Welcome → Prism demo → Pick tags → Pre-populate tasks → Try timer → Sign in
+//  Completion seeds Tag + Task data and flips hasCompletedOnboarding.
 
+import SwiftData
 import SwiftUI
 
 struct OnboardingView: View {
 
     let onComplete: () -> Void
 
-    @State private var page = 0
+    @Environment(\.modelContext) private var modelContext
 
-    private struct PageData {
-        let icon: String
-        let iconColor: Color
-        let title: String
-        let subtitle: String
+    @State private var step: Step = .welcome
+    @State private var state = OnboardingState()
+
+    enum Step: Int, CaseIterable, Comparable {
+        case welcome
+        case prismDemo
+        case pickTags
+        case presetTasks
+        case tryTimer
+        case signIn
+
+        static func < (lhs: Step, rhs: Step) -> Bool { lhs.rawValue < rhs.rawValue }
+
+        var ctaTitle: String {
+            switch self {
+            case .welcome:      return "Get started"
+            case .prismDemo:    return "Next"
+            case .pickTags:     return "Continue"
+            case .presetTasks:  return "Continue"
+            case .tryTimer:     return "Almost done"
+            case .signIn:       return "Start tracking"
+            }
+        }
+
+        var showsBack: Bool { self != .welcome }
     }
-
-    private let pages: [PageData] = [
-        .init(icon: "clock.badge.checkmark.fill",
-              iconColor: Color.accentPrimary,
-              title: "Welcome to Allot",
-              subtitle: "Your personal time tracker. Simple, focused, and beautifully designed."),
-        .init(icon: "checklist",
-              iconColor: Color.tagTeal,
-              title: "Plan Your Day",
-              subtitle: "Add one-time or recurring tasks. Tag them, schedule them, and see everything at a glance."),
-        .init(icon: "timer",
-              iconColor: Color.tagMustard,
-              title: "Track in Real Time",
-              subtitle: "Long-press any task to start a timer instantly. Focus mode keeps your screen on while you work."),
-        .init(icon: "chart.pie.fill",
-              iconColor: Color.tagSage,
-              title: "See Where It Goes",
-              subtitle: "The Allotted tab breaks down your time by tag — day, week, month, or year."),
-    ]
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Color.bgPrimary.ignoresSafeArea()
 
-            // Slide pages
             ZStack {
-                ForEach(Array(pages.enumerated()), id: \.offset) { i, p in
-                    if i == page {
-                        pageContent(p)
+                ForEach(Step.allCases, id: \.rawValue) { s in
+                    if s == step {
+                        currentStepView
                             .transition(.asymmetric(
                                 insertion: .move(edge: .trailing).combined(with: .opacity),
                                 removal:   .move(edge: .leading).combined(with: .opacity)
@@ -54,62 +57,152 @@ struct OnboardingView: View {
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: page)
+            .animation(.easeInOut(duration: 0.28), value: step)
+            .padding(.bottom, 130)
 
-            // Dots + button
-            VStack(spacing: 28) {
-                HStack(spacing: 7) {
-                    ForEach(0..<pages.count, id: \.self) { i in
-                        Capsule()
-                            .fill(i == page ? Color.accentPrimary : Color.textTertiary.opacity(0.35))
-                            .frame(width: i == page ? 22 : 7, height: 7)
-                            .animation(.easeInOut(duration: 0.2), value: page)
-                    }
-                }
-
-                Button {
-                    if page < pages.count - 1 {
-                        withAnimation(.easeInOut(duration: 0.3)) { page += 1 }
-                    } else {
-                        onComplete()
-                    }
-                } label: {
-                    Text(page == pages.count - 1 ? "Get Started" : "Continue")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(Color.bgPrimary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.accentPrimary, in: Capsule())
-                        .padding(.horizontal, 32)
-                }
-                .buttonStyle(.plain)
+            VStack(spacing: 22) {
+                progressDots
+                actionRow
             }
-            .padding(.bottom, 56)
+            .padding(.bottom, 48)
+        }
+        .overlay(alignment: .topLeading) {
+            if step.showsBack {
+                Button {
+                    advance(by: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(width: 40, height: 40)
+                }
+                .padding(.top, 12)
+                .padding(.leading, 8)
+            }
         }
     }
 
-    private func pageContent(_ p: PageData) -> some View {
-        VStack(spacing: 28) {
+    // MARK: - Step views
+
+    @ViewBuilder
+    private var currentStepView: some View {
+        switch step {
+        case .welcome:      welcomeView
+        case .prismDemo:    OnboardingPrismDemoStep(state: state, onNext: { advance(by: 1) })
+        case .pickTags:     OnboardingTagsStep(state: state)
+        case .presetTasks:  OnboardingTasksStep(state: state)
+        case .tryTimer:     OnboardingTimerStep()
+        case .signIn:       OnboardingSignInStep(onContinue: { complete() })
+        }
+    }
+
+    private var welcomeView: some View {
+        VStack(spacing: 24) {
             Spacer()
-            Image(systemName: p.icon)
-                .font(.system(size: 80, weight: .light))
-                .foregroundStyle(p.iconColor)
-                .padding(.bottom, 4)
-            VStack(spacing: 12) {
-                Text(p.title)
-                    .font(.system(size: 30, weight: .bold))
+            Image(systemName: "clock.badge.checkmark.fill")
+                .font(.system(size: 88, weight: .light))
+                .foregroundStyle(Color.textPrimary)
+            VStack(spacing: 14) {
+                Text("Where did your time go?")
+                    .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(Color.textPrimary)
                     .multilineTextAlignment(.center)
-                Text(p.subtitle)
+                Text("Allot helps you see — without judgment.")
                     .font(.system(size: 17))
                     .foregroundStyle(Color.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
-                    .padding(.horizontal, 44)
+                    .padding(.horizontal, 36)
             }
             Spacer()
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Progress + actions
+
+    private var progressDots: some View {
+        HStack(spacing: 7) {
+            ForEach(Step.allCases, id: \.rawValue) { s in
+                Capsule()
+                    .fill(s == step ? Color.accentPrimary : Color.textTertiary.opacity(0.3))
+                    .frame(width: s == step ? 22 : 7, height: 7)
+                    .animation(.easeInOut(duration: 0.2), value: step)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var actionRow: some View {
+        // The SignIn step has its own primary buttons, so omit the global CTA there.
+        if step == .signIn {
+            EmptyView()
+        } else {
+            Button {
+                primaryAction()
+            } label: {
+                Text(step.ctaTitle)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(primaryEnabled ? Color.bgPrimary : Color.textTertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        Capsule().fill(
+                            primaryEnabled ? Color.accentPrimary : Color.bgSecondary
+                        )
+                    )
+                    .padding(.horizontal, 32)
+            }
+            .buttonStyle(.plain)
+            .disabled(!primaryEnabled)
+        }
+    }
+
+    private var primaryEnabled: Bool {
+        switch step {
+        case .prismDemo:    return state.didExplorePrism
+        case .pickTags:     return !state.tags.filter(\.enabled).isEmpty
+        default:            return true
+        }
+    }
+
+    private func primaryAction() {
+        if step == .tryTimer {
+            // Last informational step before SignIn (which has its own CTAs).
+            advance(by: 1)
+        } else {
+            advance(by: 1)
+        }
+    }
+
+    private func advance(by delta: Int) {
+        let nextRaw = step.rawValue + delta
+        guard let next = Step(rawValue: nextRaw) else { return }
+        withAnimation(.easeInOut(duration: 0.28)) { step = next }
+    }
+
+    // MARK: - Completion
+
+    private func complete() {
+        // Seed selected preset tags + custom tags.
+        let presetSelected = state.enabledPresetTags
+        Seed.installPresetTags(selected: presetSelected, in: modelContext)
+        for custom in state.enabledCustomTags {
+            modelContext.insert(Tag(
+                name: custom.name,
+                colorToken: custom.colorToken,
+                emoji: custom.emoji
+            ))
+        }
+        try? modelContext.save()
+
+        // Seed selected tasks under each enabled tag.
+        let scoped = state.selectedTasksByTag.filter { entry in
+            state.enabledPresetTags.contains { $0.name == entry.key }
+        }
+        Seed.installPresetTasks(selectedByTag: scoped, in: modelContext)
+
+        onComplete()
     }
 }

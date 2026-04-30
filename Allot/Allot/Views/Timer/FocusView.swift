@@ -14,6 +14,7 @@ struct FocusView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(TimerService.self) private var timerService
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
 
     @State private var stoppedSession: TimeSession?
     @State private var unboundSession: TimeSession?
@@ -135,7 +136,7 @@ struct FocusView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(.white.opacity(0.4))
                 }
-                Text(task.title)
+                Text(task.displayTitle(showEmoji: showTaskEmoji))
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)

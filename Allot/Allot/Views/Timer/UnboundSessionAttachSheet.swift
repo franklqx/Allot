@@ -17,6 +17,8 @@ struct UnboundSessionAttachSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss)      private var dismiss
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @Query(sort: \WorkTask.createdAt, order: .reverse)
     private var allTasks: [WorkTask]
 
@@ -74,7 +76,7 @@ struct UnboundSessionAttachSheet: View {
                                         } else {
                                             TagDot(color: Color.textTertiary, style: .filled, size: 10)
                                         }
-                                        Text(task.title)
+                                        Text(task.displayTitle(showEmoji: showTaskEmoji))
                                             .font(.system(size: 15))
                                             .foregroundStyle(Color.textPrimary)
                                             .lineLimit(1)
@@ -166,27 +168,6 @@ private struct CreateAndAttachSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .foregroundStyle(Color.textSecondary)
-                Spacer()
-                Text("New task")
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Button("Create") {
-                    let trimmed = title.trimmingCharacters(in: .whitespaces)
-                    guard !trimmed.isEmpty else { return }
-                    onCreate(trimmed, tag)
-                    dismiss()
-                }
-                .foregroundStyle(title.trimmingCharacters(in: .whitespaces).isEmpty
-                                 ? Color.accentPrimary.opacity(0.4)
-                                 : Color.accentPrimary)
-                .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-
             TextField("Task title", text: $title, axis: .vertical)
                 .font(.system(size: 22, weight: .medium))
                 .focused($focused)
@@ -223,12 +204,24 @@ private struct CreateAndAttachSheet: View {
             .padding(.bottom, 24)
         }
         .background(Color.bgElevated)
+        .sheetChrome(
+            title: "New task",
+            leading: SheetAction(label: "Cancel") { dismiss() },
+            trailing: SheetAction(label: "Create") {
+                let trimmed = title.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.isEmpty else { return }
+                onCreate(trimmed, tag)
+                dismiss()
+            }
+        )
         .task {
             tag = initialTag
             focused = true
         }
         .sheet(isPresented: $showTagPicker) {
             TagPickerSheet(selectedTag: $tag)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(Color.bgElevated)
         }
     }
 }

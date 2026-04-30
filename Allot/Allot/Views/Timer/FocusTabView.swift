@@ -16,6 +16,8 @@ struct FocusTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(TimerService.self) private var timerService
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @Query private var allTasks: [WorkTask]
 
     @State private var modeIndex: Int = 0          // 0=stopwatch, 1-6=countdown presets
@@ -247,7 +249,7 @@ struct FocusTabView: View {
                     if let tag = task.tag, !tag.isSystem {
                         TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 8)
                     }
-                    Text(task.title)
+                    Text(task.displayTitle(showEmoji: showTaskEmoji))
                         .font(.system(size: 17, weight: .medium))
                         .foregroundStyle(Color.textSecondary)
                         .lineLimit(1)
@@ -324,6 +326,8 @@ private struct TaskPickRow: View {
     let isSelected: Bool
     let onTap: () -> Void
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -333,7 +337,7 @@ private struct TaskPickRow: View {
                     TagDot(color: Color.textTertiary, style: .filled, size: 8)
                 }
 
-                Text(task.title)
+                Text(task.displayTitle(showEmoji: showTaskEmoji))
                     .font(.system(size: 15))
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)

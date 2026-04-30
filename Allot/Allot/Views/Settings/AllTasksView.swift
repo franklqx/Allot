@@ -14,6 +14,8 @@ struct AllTasksView: View {
 
     @Environment(\.modelContext) private var modelContext
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @Query(sort: \WorkTask.createdAt, order: .reverse)
     private var tasks: [WorkTask]
 
@@ -25,6 +27,7 @@ struct AllTasksView: View {
     }
 
     @State private var typeFilter: TypeFilter = .all
+    @State private var taskToEdit: WorkTask?
 
     private var filteredTasks: [WorkTask] {
         switch typeFilter {
@@ -51,17 +54,30 @@ struct AllTasksView: View {
             } else {
                 List {
                     ForEach(filteredTasks) { task in
-                        row(task)
-                            .listRowBackground(Color.bgElevated)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    modelContext.delete(task)
-                                    try? modelContext.save()
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                                .tint(.red)
+                        Button {
+                            taskToEdit = task
+                        } label: {
+                            row(task)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.bgElevated)
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                addToToday(task)
+                            } label: {
+                                Label("Add to today", systemImage: "calendar.badge.plus")
                             }
+                            .tint(.blue)
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                modelContext.delete(task)
+                                try? modelContext.save()
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                            .tint(.red)
+                        }
                     }
                 }
                 .listStyle(.insetGrouped)
@@ -72,6 +88,10 @@ struct AllTasksView: View {
         .navigationTitle("All tasks")
         .navigationBarTitleDisplayMode(.inline)
         .background(Color.bgPrimary)
+        .sheet(item: $taskToEdit) { task in
+            NewTaskView(prefilledDate: task.scheduledDate ?? Date(), editingTask: task)
+                .presentationDetents([.large])
+        }
     }
 
     private func row(_ task: WorkTask) -> some View {
@@ -85,7 +105,7 @@ struct AllTasksView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(task.title)
+                    Text(task.displayTitle(showEmoji: showTaskEmoji))
                         .font(.system(size: 15))
                         .foregroundStyle(Color.textPrimary)
                         .lineLimit(1)
@@ -115,8 +135,24 @@ struct AllTasksView: View {
             }
 
             Spacer()
+
+            if !task.isScheduled(on: Date()) {
+                Button {
+                    addToToday(task)
+                } label: {
+                    Label("Today", systemImage: "calendar.badge.plus")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.accentPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.accentPrimary.opacity(0.1), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     private var emptyState: some View {
@@ -137,5 +173,11 @@ struct AllTasksView: View {
         case .once:      return "No one-off tasks"
         case .recurring: return "No recurring tasks"
         }
+    }
+
+    private func addToToday(_ task: WorkTask) {
+        task.reuseFor(date: Date())
+        try? modelContext.save()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 }

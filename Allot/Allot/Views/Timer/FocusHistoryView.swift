@@ -212,6 +212,8 @@ struct FocusHistoryView: View {
 }
 
 private struct HistoryRow: View {
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     let session: TimeSession
 
     private var duration: Int {
@@ -247,7 +249,7 @@ private struct HistoryRow: View {
                 if let tag = task.tag, !tag.isSystem {
                     TagDot(color: Color.tagColor(tag.colorToken), style: .filled, size: 8)
                 }
-                Text(task.title)
+                Text(task.displayTitle(showEmoji: showTaskEmoji))
                     .font(.system(size: 15))
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)

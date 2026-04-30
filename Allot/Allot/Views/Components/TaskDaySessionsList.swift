@@ -26,7 +26,7 @@ struct TaskDaySessionsList: View {
 
     private var sessions: [TimeSession] {
         let cal = Calendar.current
-        return task.sessions
+        return (task.sessions ?? [])
             .filter { $0.endAt != nil && cal.isDate($0.startAt, inSameDayAs: date) }
             .sorted { a, b in
                 // No-real-time sessions (quickLog / manualEntry) float to the

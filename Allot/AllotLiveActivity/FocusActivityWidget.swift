@@ -92,10 +92,7 @@ struct FocusActivityWidget: Widget {
                     .padding(.top, 2)
                 }
             } compactLeading: {
-                compactIcon(for: context.state)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.tagColor(context.state.tagColorToken))
-                    .frame(width: 18, height: 18)
+                compactLeading(for: context.state)
             } compactTrailing: {
                 // CRITICAL — `Text(timerInterval:)` makes iOS reserve space
                 // for the widest possible representation of the range (e.g.
@@ -114,16 +111,38 @@ struct FocusActivityWidget: Widget {
                     .frame(width: 54, alignment: .trailing)
                     .foregroundStyle(context.state.isPaused ? Color.white.opacity(0.6) : Color.white)
             } minimal: {
-                compactIcon(for: context.state)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.tagColor(context.state.tagColorToken))
+                if context.state.emoji.isEmpty {
+                    compactSystemIcon(for: context.state)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.tagColor(context.state.tagColorToken))
+                } else {
+                    Text(context.state.emoji)
+                        .font(.system(size: 14))
+                }
             }
             .keylineTint(Color.tagColor(context.state.tagColorToken))
         }
     }
 
+    /// What the OS shows on the left side of the compact pill. We prefer
+    /// the user's task emoji and fall back to a status glyph when no emoji
+    /// is set or the user has hidden emoji globally.
     @ViewBuilder
-    private func compactIcon(for state: FocusActivityAttributes.ContentState) -> some View {
+    private func compactLeading(for state: FocusActivityAttributes.ContentState) -> some View {
+        if state.emoji.isEmpty {
+            compactSystemIcon(for: state)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.tagColor(state.tagColorToken))
+                .frame(width: 18, height: 18)
+        } else {
+            Text(state.emoji)
+                .font(.system(size: 16))
+                .frame(width: 20, height: 20)
+        }
+    }
+
+    @ViewBuilder
+    private func compactSystemIcon(for state: FocusActivityAttributes.ContentState) -> some View {
         if state.countdownFinished {
             Image(systemName: "bell.fill")
         } else if state.isPaused {
@@ -175,16 +194,14 @@ struct FocusActivityWidget: Widget {
 
 private struct LockScreenView: View {
     let state: FocusActivityAttributes.ContentState
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        // Leave the background to iOS — `activityBackgroundTint(nil)` on the
+        // ActivityConfiguration lets the system render its default
+        // translucent glass material in both light and dark modes, so the
+        // wallpaper shows through and the banner adapts to whatever the
+        // lock screen looks like underneath.
         content
-            // Dark mode: paint solid black behind the row so the activity
-            // banner reads as a clean black card.
-            // Light mode: let iOS's default translucent glass material show
-            // through (activityBackgroundTint is nil at the configuration
-            // level), so the wallpaper is visible behind the row.
-            .background(colorScheme == .dark ? Color.black : Color.clear)
     }
 
     private var content: some View {

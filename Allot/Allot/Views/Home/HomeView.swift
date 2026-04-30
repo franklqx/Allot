@@ -13,6 +13,8 @@ struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(TimerService.self) private var timerService
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @Query private var allTasks: [WorkTask]
 
     @State private var hideCompleted = false
@@ -23,6 +25,7 @@ struct HomeView: View {
     @State private var taskToEdit: WorkTask?
     @State private var taskPendingSwitch: WorkTask?
     @State private var showDateJump = false
+    @State private var showAccountSheet = false
 
     // MARK: Computed
 
@@ -54,6 +57,7 @@ struct HomeView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 topHeader
+                SignInBanner { showAccountSheet = true }
                 DateStripView(selectedDate: $selectedDate)
                     .padding(.top, 8)
                 taskList
@@ -61,22 +65,28 @@ struct HomeView: View {
             .background(Color.bgPrimary)
             .navigationBarHidden(true)
         }
+        .sheet(isPresented: $showAccountSheet) {
+            NavigationStack { AccountView() }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(item: $taskToComplete) { task in
             CompleteSheet(task: task, date: selectedDate)
-                // Path A (logged time exists) needs room for the today's-
-                // sessions list at the bottom; Path B is a tighter sheet.
+                // Path A (logged time exists) opens taller (~2/3) and can
+                // pull to full screen for long session lists; Path B is a
+                // tight fixed-height card with chip picker only.
                 .presentationDetents(
                     task.workedSeconds(on: selectedDate) > 0
-                        ? [.medium, .large]
-                        : [.height(360)]
+                        ? [.fraction(0.65), .large]
+                        : [.height(320)]
                 )
-                .presentationDragIndicator(.hidden)
+                .presentationDragIndicator(.visible)
                 .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $activeTaskDetail) { task in
             ActiveTaskPanelView(task: task, date: selectedDate)
-                .presentationDetents([.height(390)])
-                .presentationDragIndicator(.hidden)
+                .presentationDetents([.height(340)])
+                .presentationDragIndicator(.visible)
                 .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $onceTaskDetail) { task in
@@ -88,7 +98,7 @@ struct HomeView: View {
                 activeTaskTitle: activeTaskTitle(excluding: task)
             )
             .presentationDetents([.height(panelHeight(for: task))])
-            .presentationDragIndicator(.hidden)
+            .presentationDragIndicator(.visible)
             .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $recurringTaskDetail) { task in
@@ -99,7 +109,8 @@ struct HomeView: View {
                 onStart: { startFromDetail(task) },
                 activeTaskTitle: activeTaskTitle(excluding: task)
             )
-            .presentationDragIndicator(.hidden)
+            .presentationDetents([.fraction(0.65), .large])
+            .presentationDragIndicator(.visible)
             .presentationBackground(Color.bgElevated)
         }
         .sheet(item: $taskToEdit) { task in
@@ -174,13 +185,16 @@ struct HomeView: View {
                     .listRowInsets(EdgeInsets())
             } else {
                 ForEach(tasksForDate, id: \.id) { task in
+                    let isToday = Calendar.current.isDateInToday(selectedDate)
+                    let isActiveTask = timerService.activeSession?.workTask?.id == task.id
                     VStack(spacing: 0) {
                         TaskRowView(
                             task: task,
                             date: selectedDate,
-                            isRunning: timerService.activeSession?.workTask?.id == task.id,
+                            isRunning: isToday && isActiveTask,
                             timerSeconds: timerService.displaySeconds,
-                            isCountingDown: timerService.activeSession?.workTask?.id == task.id
+                            isCountingDown: isToday
+                                && isActiveTask
                                 && timerService.countdownTarget != nil,
                             onIconTap: { handleIconTap(task) },
                             onRowTap:  { openDetail(task) }
@@ -257,7 +271,7 @@ struct HomeView: View {
         var height: CGFloat = 270
         if task.tag != nil && !(task.tag?.isSystem ?? true) { height += 36 }
         let cal = Calendar.current
-        let dayCount = task.sessions.filter {
+        let dayCount = (task.sessions ?? []).filter {
             $0.endAt != nil && cal.isDate($0.startAt, inSameDayAs: selectedDate)
         }.count
         if dayCount > 0 {
@@ -268,7 +282,9 @@ struct HomeView: View {
     }
 
     private func openDetail(_ task: WorkTask) {
-        if timerService.isRunning,
+        let isToday = Calendar.current.isDateInToday(selectedDate)
+        if isToday,
+           timerService.isRunning,
            timerService.activeSession?.workTask?.id == task.id {
             activeTaskDetail = task
             return
@@ -283,7 +299,8 @@ struct HomeView: View {
     private func activeTaskTitle(excluding task: WorkTask) -> String? {
         guard timerService.isRunning else { return nil }
         if timerService.activeSession?.workTask?.id == task.id { return nil }
-        return timerService.activeSession?.workTask?.title ?? "current timer"
+        let active = timerService.activeSession?.workTask
+        return active?.displayTitle(showEmoji: showTaskEmoji) ?? "current timer"
     }
 
     private func startFromDetail(_ task: WorkTask) {
@@ -325,6 +342,7 @@ private struct ActiveTaskPanelView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(TimerService.self) private var timerService
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
 
     private var modeTitle: String {
         if timerService.countdownCompleted { return "Time's up" }
@@ -342,90 +360,84 @@ private struct ActiveTaskPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            GrabberView()
-
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(task.title)
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(Color.textPrimary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 8)
-
-                    Label(modeTitle, systemImage: modeIcon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.textSecondary)
-                        .lineLimit(1)
-                }
-                .padding(.top, 12)
-
-                HStack(spacing: 6) {
-                    if let tag = task.tag, !tag.isSystem {
-                        Circle()
-                            .fill(Color.tagColor(tag.colorToken))
-                            .frame(width: 7, height: 7)
-                        Text(tag.name)
-                    } else {
-                        Text("Untagged")
-                    }
-                    Text("·")
-                        .foregroundStyle(Color.textTertiary)
-                    Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                }
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Color.textSecondary)
-                .padding(.top, 8)
-
-                Text(formatClock(timerService.displaySeconds))
-                    .font(.system(size: 58, weight: .regular, design: .rounded))
-                    .monospacedDigit()
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(task.displayTitle(showEmoji: showTaskEmoji))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(Color.textPrimary)
-                    .minimumScaleFactor(0.55)
                     .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 34)
-                    .animation(nil, value: timerService.displaySeconds)
 
-                HStack(spacing: 10) {
-                    Button {
-                        timerService.isPaused ? timerService.resume() : timerService.pause()
-                    } label: {
-                        Label(timerService.isPaused ? "Resume" : "Pause",
-                              systemImage: timerService.isPaused ? "play.fill" : "pause.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.textPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                            .background(Color.bgSecondary, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
+                Spacer(minLength: 8)
 
-                    Button(role: .destructive) {
-                        timerService.stop(in: modelContext)
-                        dismiss()
-                    } label: {
-                        Label("Stop", systemImage: "stop.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.stateDestructive)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                            .background(Color.bgSecondary.opacity(0.75), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.top, 32)
-
-                Text("This task is currently running.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, 16)
+                Label(modeTitle, systemImage: modeIcon)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.textSecondary)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 18)
+
+            HStack(spacing: 6) {
+                if let tag = task.tag, !tag.isSystem {
+                    Circle()
+                        .fill(Color.tagColor(tag.colorToken))
+                        .frame(width: 7, height: 7)
+                    Text(tag.name)
+                } else {
+                    Text("Untagged")
+                }
+                Text("·")
+                    .foregroundStyle(Color.textTertiary)
+                Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+            }
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(Color.textSecondary)
+            .padding(.top, 6)
+
+            Text(formatClock(timerService.displaySeconds))
+                .font(.system(size: 56, weight: .regular, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.textPrimary)
+                .minimumScaleFactor(0.55)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 18)
+                .animation(nil, value: timerService.displaySeconds)
+
+            HStack(spacing: 10) {
+                Button {
+                    timerService.isPaused ? timerService.resume() : timerService.pause()
+                } label: {
+                    Label(timerService.isPaused ? "Resume" : "Pause",
+                          systemImage: timerService.isPaused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(Color.bgSecondary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button(role: .destructive) {
+                    timerService.stop(in: modelContext)
+                    dismiss()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.stateDestructive)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(Color.bgSecondary.opacity(0.75), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 18)
+
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.bgElevated)
+        .sheetChrome(title: "Running")
     }
 }
 
@@ -444,31 +456,21 @@ private struct DateJumpSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            DatePicker("", selection: $draft, displayedComponents: .date)
-                .datePickerStyle(.graphical)
-                .tint(Color.accentPrimary)
-                .padding()
-                .navigationTitle("Jump to date")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Today") {
-                            draft = Date()
-                            date = Date()
-                            onDismiss()
-                        }
-                        .foregroundStyle(Color.textSecondary)
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") {
-                            date = draft
-                            onDismiss()
-                        }
-                        .foregroundStyle(Color.accentPrimary)
-                        .fontWeight(.semibold)
-                    }
+        DatePicker("", selection: $draft, displayedComponents: .date)
+            .datePickerStyle(.graphical)
+            .tint(Color.accentPrimary)
+            .padding()
+            .sheetChrome(
+                title: "Jump to date",
+                leading: SheetAction(label: "Today") {
+                    draft = Date()
+                    date = Date()
+                    onDismiss()
+                },
+                trailing: SheetAction(label: "Done") {
+                    date = draft
+                    onDismiss()
                 }
-        }
+            )
     }
 }

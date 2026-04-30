@@ -50,12 +50,12 @@ struct TagsView: View {
         .sheet(isPresented: $showCreateSheet) {
             TagEditSheet()
                 .presentationDetents([.height(400)])
-                .presentationBackground(Color.bgPrimary)
+                .presentationBackground(Color.bgGrouped)
         }
         .sheet(item: $editingTag) { tag in
             TagEditSheet(tag: tag)
-                .presentationDetents([.height(400)])
-                .presentationBackground(Color.bgPrimary)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(Color.bgGrouped)
         }
     }
 
@@ -68,7 +68,7 @@ struct TagsView: View {
                 .font(.system(size: 16))
                 .foregroundStyle(Color.textPrimary)
             Spacer()
-            let n = tag.tasks.count
+            let n = tag.tasks?.count ?? 0
             Text("\(n) task\(n == 1 ? "" : "s")")
                 .font(.system(size: 13))
                 .foregroundStyle(Color.textTertiary)

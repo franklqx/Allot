@@ -17,6 +17,8 @@ struct OncePanelView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @State private var showRemoveConfirm = false
 
     private var workedSeconds: Int { task.workedSeconds(on: date) }
@@ -28,14 +30,12 @@ struct OncePanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            GrabberView()
-
             VStack(alignment: .leading, spacing: 0) {
                 // Title row — task name on the left, worked duration on the
                 // far right at a size that visually pairs with (but doesn't
                 // overpower) the title.
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(task.title)
+                    Text(task.displayTitle(showEmoji: showTaskEmoji))
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(Color.textPrimary)
                         .lineLimit(1)
@@ -48,7 +48,7 @@ struct OncePanelView: View {
                             .fixedSize(horizontal: true, vertical: false)
                     }
                 }
-                .padding(.top, 12)
+                .padding(.top, 20)
 
                 // Date · startTime
                 HStack(spacing: 6) {

@@ -19,33 +19,27 @@ struct RepeatRuleSheet: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            List(options, id: \.0) { rule, label in
-                HStack {
-                    Text(label)
-                        .foregroundStyle(Color.textPrimary)
-                    Spacer()
-                    if selectedRule == rule {
-                        Image(systemName: "checkmark")
-                            .foregroundStyle(Color.accentPrimary)
-                            .font(.system(size: 15, weight: .semibold))
-                    }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    selectedRule = rule
-                    dismiss()
+        List(options, id: \.0) { rule, label in
+            HStack {
+                Text(label)
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                if selectedRule == rule {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Color.accentPrimary)
+                        .font(.system(size: 15, weight: .semibold))
                 }
             }
-            .navigationTitle("Repeat")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                        .foregroundStyle(Color.accentPrimary)
-                }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedRule = rule
+                dismiss()
             }
         }
+        .sheetChrome(
+            title: "Repeat",
+            trailing: SheetAction(label: "Done") { dismiss() }
+        )
         .presentationDetents([.medium])
     }
 }

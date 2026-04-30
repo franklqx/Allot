@@ -21,6 +21,8 @@ struct AllottedDrillView: View {
     let timeRange: TimeRange
     let sessions: [TimeSession]   // pre-filtered by time range + active filters
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @State private var highlightTaskId: UUID? = nil
 
     // MARK: Computed
@@ -55,7 +57,7 @@ struct AllottedDrillView: View {
                 id: stat.id,
                 color: Color.tagColor(tag.colorToken).opacity(opacity),
                 fraction: stat.fraction,
-                label: stat.task.title,
+                label: stat.task.displayTitle(showEmoji: showTaskEmoji),
                 sublabel: formatDuration(stat.seconds)
             )
         }
@@ -109,7 +111,7 @@ struct AllottedDrillView: View {
                 .padding(.leading, 20)
                 .padding(.trailing, 12)
             VStack(alignment: .leading, spacing: 2) {
-                Text(stat.task.title)
+                Text(stat.task.displayTitle(showEmoji: showTaskEmoji))
                     .font(.system(size: 15))
                     .foregroundStyle(Color.textPrimary.opacity(dimmed ? 0.3 : 1))
                     .lineLimit(1)

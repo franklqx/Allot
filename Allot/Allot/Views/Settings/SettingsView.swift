@@ -10,9 +10,64 @@ struct SettingsView: View {
     @AppStorage("hasCompletedOnboarding")       private var hasCompletedOnboarding = true
     @AppStorage("focusReminderIntervalMinutes") private var focusReminderIntervalMinutes = 60
     @AppStorage("dynamicIslandEnabled")         private var dynamicIslandEnabled = true
+    @AppStorage("showTaskEmoji")                private var showTaskEmoji = true
+
+    @Bindable private var auth = AuthManager.shared
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Toggle "on" tint that stays visible in dark / glass mode.
+    /// Light mode keeps the existing label-color chrome; dark mode uses Sky
+    /// so the track contrasts with the white thumb on translucent glass.
+    private var toggleTint: Color {
+        colorScheme == .dark ? Color.tagSky : Color.accentPrimary
+    }
 
     var body: some View {
         List {
+            Section("Account") {
+                NavigationLink {
+                    AccountView()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: auth.isSignedIn ? "person.crop.circle.fill" : "person.crop.circle.badge.exclamationmark")
+                            .font(.system(size: 22))
+                            .foregroundStyle(auth.isSignedIn ? Color.textPrimary : Color.stateDestructive)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(auth.isSignedIn ? (auth.displayName ?? "Signed in") : "Sign in to back up")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(Color.textPrimary)
+                            Text(auth.isSignedIn ? "iCloud sync active" : "Protect your data across reinstalls")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
+            Section("Widgets") {
+                NavigationLink {
+                    WidgetGalleryView()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "rectangle.3.group")
+                            .font(.system(size: 20))
+                            .foregroundStyle(Color.textPrimary)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Customize widgets")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(Color.textPrimary)
+                            Text("Live Focus, Today, Quick Start, and more")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
             Section("Manage") {
                 NavigationLink {
                     TagsView()
@@ -39,20 +94,7 @@ struct SettingsView: View {
                     Label("Dynamic Island", systemImage: "capsule.portrait")
                         .foregroundStyle(Color.textPrimary)
                 }
-                .tint(Color.accentPrimary)
-
-                NavigationLink {
-                    TagsView()
-                } label: {
-                    HStack {
-                        Label("Tags", systemImage: "tag")
-                            .foregroundStyle(Color.textPrimary)
-                        Spacer()
-                        Text("Edit")
-                            .font(.system(size: 14))
-                            .foregroundStyle(Color.textTertiary)
-                    }
-                }
+                .tint(toggleTint)
 
                 HStack {
                     Label("Stopwatch reminder", systemImage: "bell")
@@ -89,6 +131,12 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     .frame(width: 180)
                 }
+
+                Toggle(isOn: $showTaskEmoji) {
+                    Label("Show task emoji", systemImage: "face.smiling")
+                        .foregroundStyle(Color.textPrimary)
+                }
+                .tint(toggleTint)
             }
 
             Section("About") {

@@ -27,7 +27,7 @@ struct QuickLogSheet: View {
         self.date = date
         self.onSave = onSave
         // Default: last quickLog duration for this task, else 60 min
-        let lastDuration = task.sessions
+        let lastDuration = (task.sessions ?? [])
             .filter { $0.source == .quickLog }
             .sorted { ($0.endAt ?? .distantPast) > ($1.endAt ?? .distantPast) }
             .first
@@ -40,12 +40,10 @@ struct QuickLogSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GrabberView()
-
             Text("How long did you work on this?")
                 .font(.subheadline)
                 .foregroundStyle(Color.textSecondary)
-                .padding(.top, 4)
+                .padding(.top, 12)
 
             Text(formatDuration(Int(selectedMinutes) * 60))
                 .font(.system(size: 40, weight: .semibold, design: .monospaced))
@@ -70,23 +68,17 @@ struct QuickLogSheet: View {
             .padding(.horizontal, 28)
             .padding(.top, 4)
 
-            Button {
+            Spacer(minLength: 0)
+        }
+        .background(Color.bgElevated)
+        .sheetChrome(
+            title: "Quick log",
+            leading: SheetAction(label: "Cancel") { dismiss() },
+            trailing: SheetAction(label: "Save") {
                 onSave(Int(selectedMinutes) * 60)
                 dismiss()
-            } label: {
-                Text("Save")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.accentPrimary, in: Capsule())
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 16)
-        }
-        .presentationDetents([.height(280)])
-        .presentationDragIndicator(.hidden)
-        .background(Color.bgElevated)
+        )
+        .presentationDetents([.height(300)])
     }
 }

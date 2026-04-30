@@ -18,6 +18,8 @@ struct TimerPanelView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(TimerService.self) private var timerService
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @Query private var allTasks: [WorkTask]
 
     @State private var modeIndex: Int = 0          // 0=stopwatch, 1-6=countdown presets
@@ -195,7 +197,7 @@ struct TimerPanelView: View {
                             .fill(Color.tagColor(tag.colorToken))
                             .frame(width: 8, height: 8)
                     }
-                    Text(task.title)
+                    Text(task.displayTitle(showEmoji: showTaskEmoji))
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white.opacity(0.75))
                         .lineLimit(1)
@@ -272,6 +274,8 @@ private struct PanelTaskRow: View {
     let date: Date
     let onTap: () -> Void
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     private var isCompleted: Bool { task.isCompleted(on: date) }
 
     var body: some View {
@@ -288,7 +292,7 @@ private struct PanelTaskRow: View {
                         .frame(width: 8, height: 8)
                         .padding(.leading, 12)
                 }
-                Text(task.title)
+                Text(task.displayTitle(showEmoji: showTaskEmoji))
                     .font(.system(size: 15))
                     .foregroundStyle(isCompleted ? .white.opacity(0.35) : .white.opacity(0.85))
                     .lineLimit(1)

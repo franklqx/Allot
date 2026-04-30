@@ -21,6 +21,10 @@ struct NewTaskView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss)      private var dismiss
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
+    @Query private var allTasks: [WorkTask]
+
     // MARK: State
 
     private enum TaskTab: Hashable { case task, recurring }
@@ -58,7 +62,7 @@ struct NewTaskView: View {
         self.editingTask = editingTask
 
         if let t = editingTask {
-            let titleParts = Self.splitEmojiPrefix(from: t.title)
+            let titleParts = WorkTask.splitEmojiPrefix(from: t.title)
             _activeTab          = State(initialValue: t.type == .recurring ? .recurring : .task)
             _title              = State(initialValue: titleParts.title)
             _taskEmoji          = State(initialValue: titleParts.emoji)
@@ -94,6 +98,11 @@ struct NewTaskView: View {
                 VStack(spacing: 0) {
                     titleField
 
+                    if !matchingSuggestions.isEmpty {
+                        suggestionStrip
+                            .padding(.top, 12)
+                    }
+
                     settingsFlow
                         .padding(.horizontal, 20)
                         .padding(.top, 28)
@@ -116,9 +125,11 @@ struct NewTaskView: View {
             WheelTimePickerSheet(
                 title: "Start time",
                 minutes: $startTimeMinutes,
+                date: $scheduledDate,
+                showDateSelector: activeTab == .task,
                 onDismiss: { showTimePicker = false }
             )
-            .presentationDetents([.height(340)])
+            .presentationDetents(activeTab == .task ? [.height(430)] : [.height(340)])
             .presentationBackground(Color.bgElevated)
         }
         .sheet(isPresented: $showDurationPicker) {
@@ -133,6 +144,8 @@ struct NewTaskView: View {
         }
         .sheet(isPresented: $showTagPicker) {
             TagPickerSheet(selectedTag: $selectedTag)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(Color.bgElevated)
         }
         .sheet(isPresented: $showEmojiPicker) {
             EmojiPickerSheet(
@@ -144,10 +157,10 @@ struct NewTaskView: View {
         }
     }
 
-    // MARK: Tab bar — pill segmented buttons (white-with-shadow when active)
+    // MARK: Tab bar — two independent gray chips, no outer container, no border.
 
     private var tabBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             ForEach([TaskTab.task, TaskTab.recurring], id: \.self) { tab in
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) { activeTab = tab }
@@ -158,25 +171,15 @@ struct NewTaskView: View {
                         .padding(.vertical, 8)
                         .padding(.horizontal, 18)
                         .background(
-                            ZStack {
-                                if activeTab == tab {
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color.bgElevated)
-                                        .shadow(color: Color.black.opacity(0.08),
-                                                radius: 4, x: 0, y: 1)
-                                }
-                            }
+                            activeTab == tab ? Color.bgSecondary : Color.clear,
+                            in: Capsule()
                         )
                 }
                 .buttonStyle(.plain)
                 .disabled(editingTask != nil)
             }
+            Spacer()
         }
-        .padding(4)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.bgSecondary)
-        )
         .padding(.horizontal, 20)
     }
 
@@ -186,12 +189,19 @@ struct NewTaskView: View {
         HStack(spacing: 10) {
             Button {
                 showEmojiPicker = true
-                taskEmojiCustomized = true
             } label: {
-                Text(taskEmoji.isEmpty ? Self.defaultTaskEmoji : taskEmoji)
-                    .font(.system(size: 27))
-                    .frame(width: 42, height: 42)
-                    .background(Color.bgSecondary, in: Circle())
+                Group {
+                    if taskEmoji.isEmpty {
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: 18, weight: .regular))
+                            .foregroundStyle(Color.textTertiary)
+                    } else {
+                        Text(taskEmoji)
+                            .font(.system(size: 27))
+                    }
+                }
+                .frame(width: 42, height: 42)
+                .background(Color.bgSecondary, in: Circle())
             }
             .buttonStyle(.plain)
 
@@ -210,11 +220,71 @@ struct NewTaskView: View {
         activeTab == .task ? "Task title" : "Habit title"
     }
 
-    private var whenFootnote: String {
-        if startTimeMinutes == nil { return "No scheduled start" }
-        return activeTab == .recurring
-            ? "Applies on selected days"
-            : "Starts on \(scheduledDate.formatted(.dateTime.month(.abbreviated).day()))"
+    private var startTimeValue: String {
+        let timePart: String = startTimeMinutes.map { formatStartTime($0) } ?? "Anytime"
+        if activeTab == .recurring { return timePart }
+        let cal = Calendar.current
+        let datePart: String
+        if cal.isDateInToday(scheduledDate) {
+            datePart = "Today"
+        } else if cal.isDateInTomorrow(scheduledDate) {
+            datePart = "Tomorrow"
+        } else {
+            datePart = scheduledDate.formatted(.dateTime.month(.abbreviated).day())
+        }
+        return "\(datePart) · \(timePart)"
+    }
+
+    // MARK: Suggestions
+
+    private var matchingSuggestions: [WorkTask] {
+        let raw = title.trimmingCharacters(in: .whitespaces)
+        guard !raw.isEmpty,
+              raw.count >= 2,
+              editingTask == nil,
+              activeTab == .task
+        else { return [] }
+        let q = raw.lowercased()
+        return Array(
+            allTasks
+                .filter { $0.archivedAt == nil && $0.type == .once }
+                .filter { $0.titleWithoutEmoji.lowercased().contains(q) }
+                .sorted { (($0.sessions?.count ?? 0), $0.createdAt) > (($1.sessions?.count ?? 0), $1.createdAt) }
+                .prefix(5)
+        )
+    }
+
+    private var suggestionStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(matchingSuggestions, id: \.id) { task in
+                    Button {
+                        reuseExisting(task)
+                    } label: {
+                        HStack(spacing: 8) {
+                            if showTaskEmoji, !task.titleEmojiPrefix.isEmpty {
+                                Text(task.titleEmojiPrefix)
+                                    .font(.system(size: 14))
+                            }
+                            Text(task.titleWithoutEmoji)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.textPrimary)
+                                .lineLimit(1)
+                            if let tag = task.tag, !tag.isSystem {
+                                Circle()
+                                    .fill(Color.tagColor(tag.colorToken))
+                                    .frame(width: 6, height: 6)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.bgSecondary, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
     }
 
     // MARK: Settings flow
@@ -230,10 +300,9 @@ struct NewTaskView: View {
             )
 
             SettingRow(
-                label: "When",
-                value: startTimeMinutes.map { formatStartTime($0) } ?? "Anytime",
+                label: "Start time",
+                value: startTimeValue,
                 systemImage: "clock",
-                footnote: whenFootnote,
                 action: { showTimePicker = true }
             )
 
@@ -364,10 +433,23 @@ struct NewTaskView: View {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard canSave else { return }
 
+        // Dedup: if creating a new once task with the same name + tag as an
+        // existing one, reuse that record instead of creating a duplicate.
+        if editingTask == nil, activeTab == .task,
+           let existing = duplicateOnceTask(forName: trimmed, tag: selectedTag) {
+            existing.reuseFor(date: scheduledDate)
+            existing.startTime = startTimeMinutes
+            existing.timerMode = timerMode
+            existing.countdownDuration = countdownMinutes * 60
+            try? modelContext.save()
+            dismiss()
+            return
+        }
+
         let resolvedType: TaskType = activeTab == .task ? .once : .recurring
         let resolvedRepeatRule = activeTab == .recurring ? repeatRuleForSelectedWeekdays : nil
         let resolvedCustomDays = activeTab == .recurring ? repeatCustomDaysForSelectedWeekdays : []
-        let decoratedTitle = Self.decoratedTitle(emoji: taskEmoji, title: trimmed)
+        let decoratedTitle = WorkTask.decoratedTitle(emoji: taskEmoji, title: trimmed)
 
         if let task = editingTask {
             task.title = decoratedTitle
@@ -400,19 +482,26 @@ struct NewTaskView: View {
 
     fileprivate static let defaultTaskEmoji = "💻"
 
-    private static func splitEmojiPrefix(from rawTitle: String) -> (emoji: String, title: String, hasEmoji: Bool) {
-        let trimmed = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = trimmed.first, first.isEmojiGlyph else {
-            return (defaultTaskEmoji, rawTitle, false)
+    // MARK: Dedup
+
+    private func duplicateOnceTask(forName name: String, tag: Tag?) -> WorkTask? {
+        let normalized = name.lowercased()
+        return allTasks.first {
+            $0.archivedAt == nil
+                && $0.type == .once
+                && $0.tag?.id == tag?.id
+                && $0.titleWithoutEmoji.lowercased() == normalized
         }
-        let remaining = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
-        return (String(first), remaining, true)
     }
 
-    private static func decoratedTitle(emoji: String, title: String) -> String {
-        let cleanEmoji = emoji.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanEmoji.isEmpty else { return title }
-        return "\(cleanEmoji)\(title)"
+    private func reuseExisting(_ task: WorkTask) {
+        task.reuseFor(date: scheduledDate)
+        task.startTime = startTimeMinutes
+        task.timerMode = timerMode
+        task.countdownDuration = countdownMinutes * 60
+        try? modelContext.save()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        dismiss()
     }
 
     // MARK: Recurring day mapping
@@ -479,55 +568,28 @@ struct NewTaskView: View {
 private struct WheelTimePickerSheet: View {
     let title: String
     @Binding var minutes: Int?
+    @Binding var date: Date
+    let showDateSelector: Bool
     let onDismiss: () -> Void
 
     @State private var pickerDate: Date = Date()
 
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button("Cancel") { onDismiss() }
-                    .foregroundStyle(Color.textSecondary)
-                Spacer()
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.textPrimary)
-                Spacer()
-                Button("Done") {
-                    let cal = Calendar.current
-                    let comps = cal.dateComponents([.hour, .minute], from: pickerDate)
-                    minutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-                    onDismiss()
-                }
-                .foregroundStyle(Color.accentPrimary)
-                .fontWeight(.semibold)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
+    private enum DatePreset: Hashable { case today, tomorrow, custom }
 
-            Button {
-                minutes = nil
-                onDismiss()
-            } label: {
-                HStack {
-                    Image(systemName: "clock.badge.xmark")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("Anytime")
-                        .font(.system(size: 16, weight: .semibold))
-                    Spacer()
-                    if minutes == nil {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                }
-                .foregroundStyle(Color.textPrimary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 13)
-                .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
+    private var currentPreset: DatePreset {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return .today }
+        if cal.isDateInTomorrow(date) { return .tomorrow }
+        return .custom
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if showDateSelector {
+                dateSection
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
+
+            anytimeButton
 
             DatePicker(
                 "",
@@ -537,10 +599,21 @@ private struct WheelTimePickerSheet: View {
             .datePickerStyle(.wheel)
             .labelsHidden()
             .padding(.horizontal, 20)
-            .padding(.top, 4)
-            .padding(.bottom, 12)
         }
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Color.bgElevated)
+        .sheetChrome(
+            title: title,
+            leading: SheetAction(label: "Cancel") { onDismiss() },
+            trailing: SheetAction(label: "Done") {
+                let cal = Calendar.current
+                let comps = cal.dateComponents([.hour, .minute], from: pickerDate)
+                minutes = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+                onDismiss()
+            }
+        )
         .onAppear {
             let cal = Calendar.current
             let resolvedMinutes = minutes ?? 9 * 60
@@ -548,6 +621,68 @@ private struct WheelTimePickerSheet: View {
             let m = resolvedMinutes % 60
             pickerDate = cal.date(bySettingHour: h, minute: m, second: 0, of: Date()) ?? Date()
         }
+    }
+
+    private var dateSection: some View {
+        HStack(spacing: 8) {
+            datePresetChip("Today",    isSelected: currentPreset == .today) {
+                date = Calendar.current.startOfDay(for: Date())
+            }
+            datePresetChip("Tomorrow", isSelected: currentPreset == .tomorrow) {
+                date = Calendar.current.date(byAdding: .day, value: 1,
+                                             to: Calendar.current.startOfDay(for: Date())) ?? Date()
+            }
+            Spacer(minLength: 0)
+            DatePicker(
+                "",
+                selection: $date,
+                in: Calendar.current.startOfDay(for: Date())...,
+                displayedComponents: .date
+            )
+            .datePickerStyle(.compact)
+            .labelsHidden()
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func datePresetChip(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Color.textPrimary : Color.textSecondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(
+                    isSelected ? Color.bgSecondary : Color.clear,
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var anytimeButton: some View {
+        Button {
+            minutes = nil
+            onDismiss()
+        } label: {
+            HStack {
+                Image(systemName: "clock.badge.xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("Anytime")
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer()
+                if minutes == nil {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                }
+            }
+            .foregroundStyle(Color.textPrimary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
     }
 }
 
@@ -567,83 +702,96 @@ private struct EmojiPickerSheet: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .foregroundStyle(Color.textSecondary)
-                Spacer()
-                Text("Task emoji")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.textPrimary)
-                Spacer()
-                Button("Done") {
-                    commitCustomEmojiDraft()
-                    onPick()
-                    dismiss()
-                }
-                .foregroundStyle(Color.accentPrimary)
-                .fontWeight(.semibold)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible()), count: 6),
-                spacing: 12
-            ) {
-                ForEach(presets, id: \.self) { preset in
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible()), count: 6),
+                    spacing: 12
+                ) {
                     Button {
-                        emoji = preset
+                        emoji = ""
                         onPick()
                         dismiss()
                     } label: {
-                        Text(preset)
-                            .font(.system(size: 28))
+                        Image(systemName: "circle.slash")
+                            .font(.system(size: 20, weight: .regular))
+                            .foregroundStyle(Color.textSecondary)
                             .frame(width: 44, height: 44)
                             .background(Color.bgSecondary, in: Circle())
                             .overlay {
-                                if emoji == preset {
+                                if emoji.isEmpty {
                                     Circle().stroke(Color.textPrimary, lineWidth: 2)
                                 }
                             }
                     }
                     .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 20)
 
-            Button {
-                showCustomEmojiField = true
-                customEmojiDraft = emoji
-                DispatchQueue.main.async {
-                    customFocused = true
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.textSecondary)
-                    .frame(width: 44, height: 44)
-                    .background(Color.bgSecondary, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .center)
-
-            if showCustomEmojiField {
-                TextField("Type any emoji", text: $customEmojiDraft)
-                    .font(.system(size: 28))
-                    .multilineTextAlignment(.center)
-                    .padding(.vertical, 11)
-                    .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
-                    .focused($customFocused)
-                    .padding(.horizontal, 20)
-                    .onChange(of: customEmojiDraft) { _, newValue in
-                        updateCustomEmoji(from: newValue)
+                    ForEach(presets, id: \.self) { preset in
+                        Button {
+                            emoji = preset
+                            onPick()
+                            dismiss()
+                        } label: {
+                            Text(preset)
+                                .font(.system(size: 28))
+                                .frame(width: 44, height: 44)
+                                .background(Color.bgSecondary, in: Circle())
+                                .overlay {
+                                    if emoji == preset {
+                                        Circle().stroke(Color.textPrimary, lineWidth: 2)
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
                     }
-            }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
 
-            Spacer(minLength: 0)
+                Button {
+                    showCustomEmojiField = true
+                    customEmojiDraft = emoji
+                    DispatchQueue.main.async {
+                        customFocused = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(width: 44, height: 44)
+                        .background(Color.bgSecondary, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+                if showCustomEmojiField {
+                    TextField("Type any emoji", text: $customEmojiDraft)
+                        .font(.system(size: 28))
+                        .multilineTextAlignment(.center)
+                        .padding(.vertical, 11)
+                        .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
+                        .focused($customFocused)
+                        .padding(.horizontal, 20)
+                        .onChange(of: customEmojiDraft) { _, newValue in
+                            updateCustomEmoji(from: newValue)
+                        }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, 12)
         }
+        .scrollContentBackground(.hidden)
         .background(Color.bgElevated)
+        .sheetChrome(
+            title: "Task emoji",
+            leading: SheetAction(label: "Cancel") { dismiss() },
+            trailing: SheetAction(label: "Done") {
+                commitCustomEmojiDraft()
+                onPick()
+                dismiss()
+            }
+        )
     }
 
     private func updateCustomEmoji(from value: String) {
@@ -762,7 +910,6 @@ private struct SettingRow: View {
     let value: String
     var systemImage: String?
     var dotColor: Color?
-    var footnote: String?
     let action: () -> Void
 
     var body: some View {
@@ -779,13 +926,6 @@ private struct SettingRow: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Color.textPrimary)
                         .lineLimit(1)
-
-                    if let footnote {
-                        Text(footnote)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.textTertiary)
-                            .lineLimit(1)
-                    }
                 }
 
                 Spacer(minLength: 12)
@@ -795,7 +935,7 @@ private struct SettingRow: View {
                     .foregroundStyle(Color.textTertiary)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, footnote == nil ? 12 : 10)
+            .padding(.vertical, 12)
             .background(Color.bgSecondary, in: RoundedRectangle(cornerRadius: Radius.md))
         }
         .buttonStyle(.plain)
@@ -908,11 +1048,3 @@ extension RepeatRule {
     }
 }
 
-private extension Character {
-    var isEmojiGlyph: Bool {
-        unicodeScalars.contains { scalar in
-            scalar.properties.isEmojiPresentation
-                || (scalar.properties.isEmoji && scalar.value > 0x238C)
-        }
-    }
-}

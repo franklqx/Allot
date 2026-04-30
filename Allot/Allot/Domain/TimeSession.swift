@@ -8,14 +8,15 @@ import Foundation
 import SwiftData
 
 @Model final class TimeSession {
-    var id: UUID
+    // CloudKit requires inline defaults on every non-optional stored property.
+    var id: UUID = UUID()
     /// UTC start timestamp.
-    var startAt: Date
+    var startAt: Date = Date()
     /// UTC end timestamp. nil while actively running.
     var endAt: Date?
     /// Accumulated pause duration in seconds (not counted in effective duration).
-    var totalPausedSeconds: Int
-    var source: SessionSource
+    var totalPausedSeconds: Int = 0
+    var source: SessionSource = SessionSource.liveTimer
     /// Non-nil only when source == .quickLog.
     var quickLogSubtype: QuickLogSubtype?
 

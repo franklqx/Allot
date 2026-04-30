@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1526F9DA2FA2BC2A0035B309 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 15A7AF392FA17A2A00DA08F0 /* WidgetKit.framework */; };
+		1526F9DB2FA2BC2A0035B309 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 15A7AF3B2FA17A2A00DA08F0 /* SwiftUI.framework */; };
+		1526F9E62FA2BC2D0035B309 /* AllotWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1526F9D92FA2BC2A0035B309 /* AllotWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		15A7AF3A2FA17A2A00DA08F0 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 15A7AF392FA17A2A00DA08F0 /* WidgetKit.framework */; };
 		15A7AF3C2FA17A2A00DA08F0 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 15A7AF3B2FA17A2A00DA08F0 /* SwiftUI.framework */; };
 		15A7AF492FA17A2E00DA08F0 /* AllotLiveActivityExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 15A7AF372FA17A2A00DA08F0 /* AllotLiveActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -27,6 +30,13 @@
 			remoteGlobalIDString = 15220D572F916E4200EC50FF;
 			remoteInfo = Allot;
 		};
+		1526F9E42FA2BC2D0035B309 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 15220D502F916E4200EC50FF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1526F9D82FA2BC2A0035B309;
+			remoteInfo = AllotWidgetExtension;
+		};
 		15A7AF472FA17A2E00DA08F0 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 15220D502F916E4200EC50FF /* Project object */;
@@ -44,6 +54,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				15A7AF492FA17A2E00DA08F0 /* AllotLiveActivityExtension.appex in Embed Foundation Extensions */,
+				1526F9E62FA2BC2D0035B309 /* AllotWidgetExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -54,12 +65,43 @@
 		15220D582F916E4200EC50FF /* Allot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Allot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		15220D672F916E4700EC50FF /* AllotTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AllotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		15220D712F916E4700EC50FF /* AllotUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AllotUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1526F9D92FA2BC2A0035B309 /* AllotWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AllotWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		15A7AF372FA17A2A00DA08F0 /* AllotLiveActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AllotLiveActivityExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		15A7AF392FA17A2A00DA08F0 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		15A7AF3B2FA17A2A00DA08F0 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1526F9D42FA2BB3B0035B309 /* Exceptions for "Allot" folder in "Allot" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 15220D572F916E4200EC50FF /* Allot */;
+		};
+		1526F9EA2FA2BC2D0035B309 /* Exceptions for "AllotWidget" folder in "AllotWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 1526F9D82FA2BC2A0035B309 /* AllotWidgetExtension */;
+		};
+		1526F9F02FA2BC2D0035B309 /* Exceptions for "Allot" folder in "AllotWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AppIntents/StartTaskIntent.swift,
+				Engine/WidgetPreferences.swift,
+				Engine/WidgetSnapshot.swift,
+				Views/Components/DesignTokens.swift,
+				Views/Components/PrismMiniView.swift,
+				Views/Components/WidgetPreviews/FocusInlineContent.swift,
+				Views/Components/WidgetPreviews/LiveFocusContent.swift,
+				Views/Components/WidgetPreviews/QuickStartContent.swift,
+				Views/Components/WidgetPreviews/TodayAllottedContent.swift,
+				Views/Components/WidgetPreviews/TodayCircularContent.swift,
+			);
+			target = 1526F9D82FA2BC2A0035B309 /* AllotWidgetExtension */;
+		};
 		15A7AF4D2FA17A2E00DA08F0 /* Exceptions for "AllotLiveActivity" folder in "AllotLiveActivityExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -81,7 +123,9 @@
 		15220D5A2F916E4200EC50FF /* Allot */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				1526F9D42FA2BB3B0035B309 /* Exceptions for "Allot" folder in "Allot" target */,
 				15A7AF542FA17B5A00DA08F0 /* Exceptions for "Allot" folder in "AllotLiveActivityExtension" target */,
+				1526F9F02FA2BC2D0035B309 /* Exceptions for "Allot" folder in "AllotWidgetExtension" target */,
 			);
 			path = Allot;
 			sourceTree = "<group>";
@@ -94,6 +138,14 @@
 		15220D742F916E4700EC50FF /* AllotUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = AllotUITests;
+			sourceTree = "<group>";
+		};
+		1526F9DC2FA2BC2A0035B309 /* AllotWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1526F9EA2FA2BC2D0035B309 /* Exceptions for "AllotWidget" folder in "AllotWidgetExtension" target */,
+			);
+			path = AllotWidget;
 			sourceTree = "<group>";
 		};
 		15A7AF3D2FA17A2A00DA08F0 /* AllotLiveActivity */ = {
@@ -128,6 +180,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1526F9D62FA2BC2A0035B309 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1526F9DB2FA2BC2A0035B309 /* SwiftUI.framework in Frameworks */,
+				1526F9DA2FA2BC2A0035B309 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		15A7AF342FA17A2A00DA08F0 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -147,6 +208,7 @@
 				15220D6A2F916E4700EC50FF /* AllotTests */,
 				15220D742F916E4700EC50FF /* AllotUITests */,
 				15A7AF3D2FA17A2A00DA08F0 /* AllotLiveActivity */,
+				1526F9DC2FA2BC2A0035B309 /* AllotWidget */,
 				15A7AF382FA17A2A00DA08F0 /* Frameworks */,
 				15220D592F916E4200EC50FF /* Products */,
 			);
@@ -159,6 +221,7 @@
 				15220D672F916E4700EC50FF /* AllotTests.xctest */,
 				15220D712F916E4700EC50FF /* AllotUITests.xctest */,
 				15A7AF372FA17A2A00DA08F0 /* AllotLiveActivityExtension.appex */,
+				1526F9D92FA2BC2A0035B309 /* AllotWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -188,6 +251,7 @@
 			);
 			dependencies = (
 				15A7AF482FA17A2E00DA08F0 /* PBXTargetDependency */,
+				1526F9E52FA2BC2D0035B309 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				15220D5A2F916E4200EC50FF /* Allot */,
@@ -245,6 +309,28 @@
 			productReference = 15220D712F916E4700EC50FF /* AllotUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		1526F9D82FA2BC2A0035B309 /* AllotWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1526F9E72FA2BC2D0035B309 /* Build configuration list for PBXNativeTarget "AllotWidgetExtension" */;
+			buildPhases = (
+				1526F9D52FA2BC2A0035B309 /* Sources */,
+				1526F9D62FA2BC2A0035B309 /* Frameworks */,
+				1526F9D72FA2BC2A0035B309 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1526F9DC2FA2BC2A0035B309 /* AllotWidget */,
+			);
+			name = AllotWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = AllotWidgetExtension;
+			productReference = 1526F9D92FA2BC2A0035B309 /* AllotWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		15A7AF362FA17A2A00DA08F0 /* AllotLiveActivityExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 15A7AF4E2FA17A2E00DA08F0 /* Build configuration list for PBXNativeTarget "AllotLiveActivityExtension" */;
@@ -288,6 +374,9 @@
 						CreatedOnToolsVersion = 26.4;
 						TestTargetID = 15220D572F916E4200EC50FF;
 					};
+					1526F9D82FA2BC2A0035B309 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
 					15A7AF362FA17A2A00DA08F0 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -311,6 +400,7 @@
 				15220D662F916E4700EC50FF /* AllotTests */,
 				15220D702F916E4700EC50FF /* AllotUITests */,
 				15A7AF362FA17A2A00DA08F0 /* AllotLiveActivityExtension */,
+				1526F9D82FA2BC2A0035B309 /* AllotWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -331,6 +421,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		15220D6F2F916E4700EC50FF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1526F9D72FA2BC2A0035B309 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -368,6 +465,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1526F9D52FA2BC2A0035B309 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		15A7AF332FA17A2A00DA08F0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -387,6 +491,11 @@
 			isa = PBXTargetDependency;
 			target = 15220D572F916E4200EC50FF /* Allot */;
 			targetProxy = 15220D722F916E4700EC50FF /* PBXContainerItemProxy */;
+		};
+		1526F9E52FA2BC2D0035B309 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1526F9D82FA2BC2A0035B309 /* AllotWidgetExtension */;
+			targetProxy = 1526F9E42FA2BC2D0035B309 /* PBXContainerItemProxy */;
 		};
 		15A7AF482FA17A2E00DA08F0 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -522,11 +631,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Allot/Allot.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = SKDUW38P9T;
+				DEVELOPMENT_TEAM = 526LTP6Z7D;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Allot/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -540,7 +651,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot;
+				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -557,11 +668,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Allot/Allot.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = SKDUW38P9T;
+				DEVELOPMENT_TEAM = 526LTP6Z7D;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Allot/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_NSSupportsLiveActivitiesFrequentUpdates = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -575,7 +688,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot;
+				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -671,6 +784,70 @@
 			};
 			name = Release;
 		};
+		1526F9E82FA2BC2D0035B309 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = AllotWidget/AllotWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 526LTP6Z7D;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AllotWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AllotWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot1.AllotWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1526F9E92FA2BC2D0035B309 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = AllotWidget/AllotWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 526LTP6Z7D;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AllotWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AllotWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot1.AllotWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		15A7AF4B2FA17A2E00DA08F0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -678,7 +855,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = SKDUW38P9T;
+				DEVELOPMENT_TEAM = 526LTP6Z7D;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AllotLiveActivity/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = AllotLiveActivity;
@@ -690,7 +867,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot.AllotLiveActivity;
+				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot1.AllotLiveActivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -709,7 +886,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = SKDUW38P9T;
+				DEVELOPMENT_TEAM = 526LTP6Z7D;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AllotLiveActivity/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = AllotLiveActivity;
@@ -721,7 +898,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot.AllotLiveActivity;
+				PRODUCT_BUNDLE_IDENTIFIER = com.EL.fire.Allot1.AllotLiveActivity;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -768,6 +945,15 @@
 			buildConfigurations = (
 				15220D822F916E4700EC50FF /* Debug */,
 				15220D832F916E4700EC50FF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1526F9E72FA2BC2D0035B309 /* Build configuration list for PBXNativeTarget "AllotWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1526F9E82FA2BC2D0035B309 /* Debug */,
+				1526F9E92FA2BC2D0035B309 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

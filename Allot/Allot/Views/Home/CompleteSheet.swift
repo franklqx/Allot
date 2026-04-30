@@ -31,6 +31,8 @@ struct CompleteSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss)      private var dismiss
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @State private var showCustom: Bool = false
     /// When non-nil, we are in the "preview a new session" state — chip has
     /// been picked, user hasn't committed Save vs Complete yet.
@@ -45,7 +47,7 @@ struct CompleteSheet: View {
     /// All sessions on `date`, ordered by start time.
     private var todaysSessions: [TimeSession] {
         let cal = Calendar.current
-        return task.sessions
+        return (task.sessions ?? [])
             .filter { cal.isDate($0.startAt, inSameDayAs: date) }
             .sorted { $0.startAt < $1.startAt }
     }
@@ -53,9 +55,7 @@ struct CompleteSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-                // Larger top inset so the title sits like a "large title"
-                // — consistent feel across all sheets.
-                .padding(.top, 32)
+                .padding(.top, 20)
                 .padding(.horizontal, 20)
 
             if let pending = pendingSeconds {
@@ -121,7 +121,7 @@ struct CompleteSheet: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
+                Text(task.displayTitle(showEmoji: showTaskEmoji))
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(2)
@@ -477,13 +477,6 @@ private struct EditSessionSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("Edit session")
-                .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(Color.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 32)
-                .padding(.horizontal, 20)
-
             // Start time row
             VStack(alignment: .leading, spacing: 6) {
                 Text("Start time")
@@ -533,18 +526,16 @@ private struct EditSessionSheet: View {
             .padding(.top, 18)
 
             Spacer(minLength: 0)
-
-            HStack(spacing: 8) {
-                GhostButton(title: "Cancel") { dismiss() }
-                PrimaryButton(title: "Save") {
-                    apply()
-                    dismiss()
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 22)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .sheetChrome(
+            title: "Edit session",
+            leading: SheetAction(label: "Cancel") { dismiss() },
+            trailing: SheetAction(label: "Save") {
+                apply()
+                dismiss()
+            }
+        )
     }
 
     private func stepButton(_ glyph: String) -> some View {

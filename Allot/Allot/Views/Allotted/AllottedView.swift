@@ -95,6 +95,8 @@ struct AllottedView: View {
     /// the current period without surprise.
     @State private var anchorDate: Date = Date()
 
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
+
     @Query private var allSessions: [TimeSession]
 
     @State private var mode: AllotMode = .task
@@ -836,7 +838,7 @@ struct AllottedView: View {
                             size: 10,
                             cornerRadius: 2.5
                         )
-                        Text(entry.task.title)
+                        Text(entry.task.displayTitle(showEmoji: showTaskEmoji))
                             .font(.system(size: 13))
                             .foregroundStyle(Color.textSecondary)
                             .lineLimit(1)

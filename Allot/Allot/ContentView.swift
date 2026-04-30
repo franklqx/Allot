@@ -95,6 +95,7 @@ struct ContentView: View {
             .presentationBackground(Color.bgElevated)
         }
         .onAppear(perform: checkKillRecovery)
+        .onOpenURL { url in handleDeepLink(url) }
         .onChange(of: timerService.countdownCompleted) { _, completed in
             if completed {
                 showCountdownComplete = true
@@ -109,17 +110,32 @@ struct ContentView: View {
             get: { recoverySentinel != nil },
             set: { if !$0 { recoverySentinel = nil } }
         )) {
-            Button("Save") {
-                if let s = recoverySentinel { timerService.recoverSession(for: s, in: modelContext) }
+            // Continue: pick up where the killed timer left off — session
+            // re-engages as the active one, ticker resumes, Live Activity reboots.
+            Button("Continue") {
+                if let s = recoverySentinel {
+                    timerService.continueRecoveredSession(for: s, in: modelContext)
+                }
                 recoverySentinel = nil
             }
-            Button("Discard", role: .destructive) {
+            // Save: end the session right now, write endAt = Date(), keep the data.
+            Button("Save") {
+                if let s = recoverySentinel {
+                    timerService.recoverSession(for: s, in: modelContext)
+                }
+                recoverySentinel = nil
+            }
+            // Discard: throw away the unfinished session. Marked .cancel (NOT
+            // .destructive) so iOS doesn't auto-add a Cancel button — and so
+            // hardware Escape / system dismiss runs the same logic that clears
+            // the sentinel (otherwise the alert would re-appear on next launch).
+            Button("Discard", role: .cancel) {
                 timerService.discardKillRecovery()
                 recoverySentinel = nil
             }
         } message: {
             if let s = recoverySentinel {
-                Text("Your timer for \"\(s.taskTitle)\" was still running. Save with end time set to now?")
+                Text("Your timer for \"\(s.taskTitle)\" was still running. Continue, save it now, or discard?")
             }
         }
     }
@@ -166,6 +182,48 @@ struct ContentView: View {
         guard !timerService.isRunning,
               let sentinel = timerService.killRecoverySentinel else { return }
         recoverySentinel = sentinel
+    }
+
+    // MARK: Deep links
+    //
+    // Schemes handled:
+    //   allot://home
+    //   allot://focus
+    //   allot://focus?taskId=<UUID>           — switch to Focus, leave session selection
+    //   allot://focus?start=<UUID>            — start timer for that task immediately
+    //   allot://allotted
+    private func handleDeepLink(_ url: URL) {
+        guard url.scheme == "allot" else { return }
+        let host = url.host ?? ""
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let queryItems = comps?.queryItems ?? []
+
+        switch host {
+        case "home":     selectedTab = .home; lastRealTab = .home
+        case "allotted": selectedTab = .allotted; lastRealTab = .allotted
+        case "focus":
+            selectedTab = .focus
+            lastRealTab = .focus
+            if let startId = queryItems.first(where: { $0.name == "start" })?.value,
+               let uuid = UUID(uuidString: startId) {
+                startTaskByID(uuid)
+            }
+        default:
+            break
+        }
+    }
+
+    private func startTaskByID(_ id: UUID) {
+        guard !timerService.isRunning else { return }
+        let descriptor = FetchDescriptor<WorkTask>(
+            predicate: #Predicate { $0.id == id }
+        )
+        guard let task = try? modelContext.fetch(descriptor).first else { return }
+        let countdownSeconds = task.timerMode == .countdown
+            ? max(1, task.countdownDuration)
+            : nil
+        timerService.start(task: task, countdownSeconds: countdownSeconds, in: modelContext)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 }
 

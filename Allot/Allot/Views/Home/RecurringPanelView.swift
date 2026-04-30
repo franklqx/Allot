@@ -17,6 +17,7 @@ struct RecurringPanelView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("showTaskEmoji") private var showTaskEmoji = true
     @State private var showRemoveConfirm = false
     @State private var calendarSelectedDate: Date = Calendar.current.startOfDay(for: Date())
 
@@ -30,8 +31,6 @@ struct RecurringPanelView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                GrabberView()
-
                 VStack(alignment: .leading, spacing: 0) {
                     // Recurring label
                     Text("Recurring")
@@ -39,8 +38,9 @@ struct RecurringPanelView: View {
                         .kerning(0.8)
                         .textCase(.uppercase)
                         .foregroundStyle(tagColor)
+                        .padding(.top, 20)
 
-                    Text(task.title)
+                    Text(task.displayTitle(showEmoji: showTaskEmoji))
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(Color.textPrimary)
                         .padding(.top, 8)
@@ -257,7 +257,7 @@ struct RecurringPanelView: View {
 
     private var shareWithinTagLabel: String {
         guard let tag = task.tag else { return "" }
-        let tagTotal = tag.tasks.reduce(0) { $0 + $1.workedSecondsTotal }
+        let tagTotal = (tag.tasks ?? []).reduce(0) { $0 + $1.workedSecondsTotal }
         guard tagTotal > 0 else { return "0% of #\(tag.name)" }
         let pct = Int((Double(task.workedSecondsTotal) / Double(tagTotal)) * 100)
         return "\(pct)% of #\(tag.name)"
@@ -423,7 +423,7 @@ private struct DotCell: View {
 private struct StatisticsSection: View {
     let task: WorkTask
 
-    private var sessions: [TimeSession] { task.sessions.filter { $0.endAt != nil } }
+    private var sessions: [TimeSession] { (task.sessions ?? []).filter { $0.endAt != nil } }
 
     private var avgPerDay: Int {
         let sessionDates = Set(sessions.compactMap { s -> String? in
